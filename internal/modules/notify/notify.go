@@ -21,19 +21,19 @@ type postBody struct {
 }
 
 type Notify struct {
-	token     string
-	channelID string
-	server    *http.Server
-	session   *discordgo.Session
+	token    string
+	channels map[string]string // channel name → Discord channel ID
+	server   *http.Server
+	session  *discordgo.Session
 }
 
-func New(token, channelID, addr string) *Notify {
+func New(token string, channels map[string]string, addr string) *Notify {
 	n := &Notify{
-		token:     token,
-		channelID: channelID,
+		token:    token,
+		channels: channels,
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /notify", n.handle)
+	mux.HandleFunc("POST /notify/{channel}", n.handle)
 	n.server = &http.Server{
 		Addr:              addr,
 		Handler:           mux,
@@ -49,8 +49,8 @@ func (n *Notify) Register(s *discordgo.Session) error {
 	if n.token == "" {
 		return fmt.Errorf("notify: API_TOKEN is required")
 	}
-	if n.channelID == "" {
-		return fmt.Errorf("notify: NOTIFICATION_CHANNEL_ID is required")
+	if len(n.channels) == 0 {
+		return fmt.Errorf("notify: at least one channel must be configured via NOTIFY_CHANNELS or NOTIFICATION_CHANNEL_ID")
 	}
 
 	n.session = s
@@ -84,6 +84,13 @@ func (n *Notify) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	channelName := r.PathValue("channel")
+	channelID, ok := n.channels[channelName]
+	if !ok {
+		http.Error(w, fmt.Sprintf("unknown channel: %q", channelName), http.StatusNotFound)
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var body postBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -95,13 +102,13 @@ func (n *Notify) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := n.session.ChannelMessageSend(n.channelID, body.Content); err != nil {
-		slog.Error("notify: send failed", "error", err, "channel", n.channelID)
+	if _, err := n.session.ChannelMessageSend(channelID, body.Content); err != nil {
+		slog.Error("notify: send failed", "error", err, "channel", channelName)
 		http.Error(w, "failed to send", http.StatusInternalServerError)
 		return
 	}
 
-	slog.Info("notify: sent", "channel", n.channelID, "remote", r.RemoteAddr)
+	slog.Info("notify: sent", "channel", channelName, "remote", r.RemoteAddr)
 	w.WriteHeader(http.StatusNoContent)
 }
 

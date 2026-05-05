@@ -26,7 +26,7 @@ func main() {
 	}
 
 	b.RegisterModule(ping.New(cfg.GuildID))
-	b.RegisterModule(notify.New(cfg.APIToken, cfg.NotificationChannelID, cfg.APIAddr))
+	b.RegisterModule(notify.New(cfg.APIToken, cfg.NotifyChannels, cfg.APIAddr))
 
 	if err := b.Start(); err != nil {
 		slog.Error("start", "error", err)
