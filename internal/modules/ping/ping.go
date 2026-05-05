@@ -1,13 +1,21 @@
 package ping
 
 import (
+	"fmt"
 	"log/slog"
 
 	"github.com/bwmarrin/discordgo"
 )
 
+var command = &discordgo.ApplicationCommand{
+	Name:        "ping",
+	Description: "Botの疎通確認",
+}
+
 type Ping struct {
+	session       *discordgo.Session
 	removeHandler func()
+	commandID     string
 }
 
 func New() *Ping {
@@ -17,14 +25,25 @@ func New() *Ping {
 func (p *Ping) Name() string { return "ping" }
 
 func (p *Ping) Register(s *discordgo.Session) error {
-	p.removeHandler = s.AddHandler(func(s *discordgo.Session, m *discordgo.MessageCreate) {
-		if m.Author.ID == s.State.User.ID {
+	cmd, err := s.ApplicationCommandCreate(s.State.User.ID, "", command)
+	if err != nil {
+		return fmt.Errorf("ping: register slash command: %w", err)
+	}
+	p.session = s
+	p.commandID = cmd.ID
+
+	p.removeHandler = s.AddHandler(func(s *discordgo.Session, i *discordgo.InteractionCreate) {
+		if i.Type != discordgo.InteractionApplicationCommand {
 			return
 		}
-		if m.Content == "!ping" {
-			if _, err := s.ChannelMessageSend(m.ChannelID, "pong"); err != nil {
-				slog.Error("ping: failed to send pong", "error", err, "channel", m.ChannelID)
-			}
+		if i.ApplicationCommandData().Name != "ping" {
+			return
+		}
+		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+			Type: discordgo.InteractionResponseChannelMessageWithSource,
+			Data: &discordgo.InteractionResponseData{Content: "pong"},
+		}); err != nil {
+			slog.Error("ping: failed to respond", "error", err)
 		}
 	})
 	slog.Info("ping module registered")
@@ -34,6 +53,11 @@ func (p *Ping) Register(s *discordgo.Session) error {
 func (p *Ping) Unregister() error {
 	if p.removeHandler != nil {
 		p.removeHandler()
+	}
+	if p.commandID != "" {
+		if err := p.session.ApplicationCommandDelete(p.session.State.User.ID, "", p.commandID); err != nil {
+			slog.Warn("ping: failed to delete slash command", "error", err)
+		}
 	}
 	slog.Info("ping module unregistered")
 	return nil

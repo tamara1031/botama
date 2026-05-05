@@ -19,7 +19,7 @@ func New(cfg *config.Config) (*Bot, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}
-	s.Identify.Intents = discordgo.IntentsGuildMessages | discordgo.IntentDirectMessages
+	s.Identify.Intents = discordgo.IntentsNone
 
 	return &Bot{
 		session:  s,
