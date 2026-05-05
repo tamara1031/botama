@@ -25,30 +25,44 @@
 
 ## ローカル実行
 
+`.env` を用意してから `make run`:
+
 ```bash
-# Go 1.22+ が必要
-go run ./cmd/bot \
-  -e DISCORD_TOKEN=your_token \
-  MODULES_ENABLED=ping
+cp .env.example .env
+# .env を編集して各値を設定
+
+make run
 ```
 
-または `.env` ファイルを使う場合:
+## Docker Compose で実行
 
 ```bash
-export DISCORD_TOKEN=your_token
-export MODULES_ENABLED=ping
-go run ./cmd/bot
+make up        # ビルド＆起動（ポート 8080 をホストに転送）
+make logs      # ログ確認
+make down      # 停止
 ```
 
-## Docker で実行
+### notify モジュールのテスト
+
+Docker Compose 起動後、ホストから curl で疎通確認できる:
 
 ```bash
-docker build -t botama .
+# 成功 → 204 No Content、Discord に通知が届く
+curl -i -X POST http://localhost:8080/notify \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "テスト通知"}'
 
-docker run --rm \
-  -e DISCORD_TOKEN=your_token \
-  -e MODULES_ENABLED=ping \
-  botama
+# 認証なし → 401
+curl -i -X POST http://localhost:8080/notify \
+  -H "Content-Type: application/json" \
+  -d '{"content": "テスト"}'
+
+# content 欠落 → 422
+curl -i -X POST http://localhost:8080/notify \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{}'
 ```
 
 ## Kubernetes へのデプロイ

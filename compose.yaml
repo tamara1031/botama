@@ -6,6 +6,10 @@ services:
         required: false
     environment:
       DISCORD_TOKEN: ${DISCORD_TOKEN}
-      MODULES_ENABLED: ${MODULES_ENABLED:-ping}
+      MODULES_ENABLED: ${MODULES_ENABLED:-ping,notify}
       NOTIFICATION_CHANNEL_ID: ${NOTIFICATION_CHANNEL_ID:-}
+      API_TOKEN: ${API_TOKEN:-}
+      API_ADDR: ${API_ADDR:-:8080}
+    ports:
+      - "8080:8080"
     restart: unless-stopped
