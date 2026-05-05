@@ -1,10 +1,10 @@
-.PHONY: run up down logs build
+.PHONY: run up down logs clean
 
-run:
-	go run ./cmd/bot
+run: bot
+	./bot
 
-build:
-	docker compose build --no-cache
+bot:
+	go build -o bot ./cmd/bot
 
 up:
 	docker compose up --build
@@ -14,3 +14,6 @@ down:
 
 logs:
 	docker compose logs -f bot
+
+clean:
+	rm -f bot
