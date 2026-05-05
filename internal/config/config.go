@@ -8,6 +8,7 @@ import (
 
 type Config struct {
 	Token                 string
+	GuildID               string
 	NotificationChannelID string
 	EnabledModules        []string
 }
@@ -29,6 +30,7 @@ func Load() (*Config, error) {
 
 	return &Config{
 		Token:                 token,
+		GuildID:               os.Getenv("GUILD_ID"),
 		NotificationChannelID: os.Getenv("NOTIFICATION_CHANNEL_ID"),
 		EnabledModules:        modules,
 	}, nil

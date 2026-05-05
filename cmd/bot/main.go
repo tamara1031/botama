@@ -24,7 +24,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	b.RegisterModule(ping.New())
+	b.RegisterModule(ping.New(cfg.GuildID))
 
 	if err := b.Start(); err != nil {
 		slog.Error("start", "error", err)
