@@ -21,7 +21,6 @@
 | `DISCORD_TOKEN` | ✅ | Discord bot トークン |
 | `MODULES_ENABLED` | — | 有効化するモジュール名（カンマ区切り）。未設定の場合は何も起動しない |
 | `GUILD_ID` | — | ギルドコマンドとして登録する場合のサーバー ID。未設定はグローバル（反映まで最大1時間） |
-| `NOTIFICATION_CHANNEL_ID` | notify | notify モジュール使用時の通知先チャンネル ID |
 | `API_TOKEN` | notify | notify モジュールの Bearer 認証トークン（`openssl rand -hex 32` 推奨） |
 | `API_ADDR` | — | notify モジュールの HTTP リッスンアドレス（デフォルト `:8080`） |
 
@@ -46,22 +45,22 @@ make down      # 停止
 
 ### notify モジュールのテスト
 
-Docker Compose 起動後、ホストから curl で疎通確認できる:
+送信先チャンネルの ID をパスに指定して呼び出す:
 
 ```bash
 # 成功 → 204 No Content、Discord に通知が届く
-curl -i -X POST http://localhost:8080/notify \
+curl -i -X POST http://localhost:8080/notify/509717668790534146 \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"content": "テスト通知"}'
 
 # 認証なし → 401
-curl -i -X POST http://localhost:8080/notify \
+curl -i -X POST http://localhost:8080/notify/509717668790534146 \
   -H "Content-Type: application/json" \
   -d '{"content": "テスト"}'
 
 # content 欠落 → 422
-curl -i -X POST http://localhost:8080/notify \
+curl -i -X POST http://localhost:8080/notify/509717668790534146 \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{}'
@@ -79,8 +78,7 @@ metadata:
 type: Opaque
 stringData:
   discord-token: "your_discord_token"
-  api-token: "your_api_token"         # openssl rand -hex 32
-  channel-id: "your_channel_id"
+  api-token: "your_api_token"   # openssl rand -hex 32
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -110,11 +108,6 @@ spec:
                 secretKeyRef:
                   name: botama-secret
                   key: api-token
-            - name: NOTIFICATION_CHANNEL_ID
-              valueFrom:
-                secretKeyRef:
-                  name: botama-secret
-                  key: channel-id
             - name: MODULES_ENABLED
               value: "ping,notify"
           ports:
@@ -151,7 +144,7 @@ spec:
 クラスタ内の他 Pod からの呼び出し例:
 
 ```bash
-curl -X POST http://botama.default.svc.cluster.local:8080/notify \
+curl -X POST http://botama.default.svc.cluster.local:8080/notify/509717668790534146 \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"content": "デプロイ完了"}'
@@ -167,17 +160,22 @@ curl -X POST http://botama.default.svc.cluster.local:8080/notify \
 
 ### notify
 
-`MODULES_ENABLED` に `notify` を追加すると有効になる。`NOTIFICATION_CHANNEL_ID` と `API_TOKEN` が必須。
+`MODULES_ENABLED` に `notify` を追加すると有効になる。`API_TOKEN` が必須。
+
+送信先チャンネルの Discord ID をパスに指定する:
 
 ```
-POST /notify
+POST /notify/{channelID}
 Authorization: Bearer <API_TOKEN>
 Content-Type: application/json
 
 {"content": "送りたいメッセージ"}
 ```
 
-レスポンス: 成功時 `204 No Content`
+レスポンス:
+- `204 No Content` — 送信成功
+- `401 Unauthorized` — 認証失敗
+- `422 Unprocessable Entity` — `content` が空
 
 ## 新しいモジュールの追加
 
