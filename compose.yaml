@@ -1,0 +1,11 @@
+services:
+  bot:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN}
+      MODULES_ENABLED: ${MODULES_ENABLED:-ping}
+      NOTIFICATION_CHANNEL_ID: ${NOTIFICATION_CHANNEL_ID:-}
+    restart: unless-stopped

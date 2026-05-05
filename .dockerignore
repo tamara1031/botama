@@ -2,3 +2,5 @@
 .github
 docs
 *.md
+compose.yaml
+.env*
