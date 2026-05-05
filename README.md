@@ -5,16 +5,18 @@ Kubernetes 上で動作するモジュール型 Discord bot。
 ## クイックスタート
 
 ```bash
-export DISCORD_TOKEN=your_token
-export MODULES_ENABLED=ping
-go run ./cmd/bot
+cp .env.example .env
+# .env を編集して DISCORD_TOKEN などを設定
+
+make run
 ```
 
 ## モジュール
 
-| 名前 | コマンド | 応答 |
+| 名前 | 種別 | 概要 |
 |---|---|---|
-| ping | `!ping` | `pong` |
+| ping | スラッシュコマンド | `/ping` に `pong` で応答 |
+| notify | HTTP API | `POST /notify` でDiscordに通知を送信 |
 
 ## ドキュメント
 
@@ -30,5 +32,3 @@ go run ./cmd/bot
 |---|---|
 | `preview` / `preview-<sha>` | main マージ時に自動ビルド |
 | `latest` / `X.Y.Z` | GitHub Actions の手動 dispatch でリリース |
-
-> **注意**: `go.mod` のモジュールパス `github.com/tamara1031/botama` は実際のリポジトリパスに合わせて変更してください。

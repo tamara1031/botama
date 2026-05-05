@@ -9,8 +9,10 @@
 
 1. [Discord Developer Portal](https://discord.com/developers/applications) でアプリを作成する。
 2. **Bot** タブで bot ユーザーを作成し、トークンをコピーする。
-3. **Privileged Gateway Intents** で `Message Content Intent` を有効にする（メッセージ内容を読むために必要）。
-4. **OAuth2 → URL Generator** で `bot` スコープと必要な権限（`Send Messages`, `Read Message History` など）を選んで招待 URL を生成し、サーバーに招待する。
+3. **Privileged Gateway Intents** は全て無効でよい（スラッシュコマンドは不要）。
+4. **OAuth2 → URL Generator** で以下を選んで招待 URL を生成し、サーバーに招待する。
+   - スコープ: `bot` + `applications.commands`（スラッシュコマンドの登録に必須）
+   - 権限: `Send Messages`
 
 ## 環境変数
 
@@ -18,7 +20,7 @@
 |---|---|---|
 | `DISCORD_TOKEN` | ✅ | Discord bot トークン |
 | `MODULES_ENABLED` | — | 有効化するモジュール名（カンマ区切り）。未設定の場合は何も起動しない |
-| `GUILD_ID` | — | ギルドコマンドとして登録する場合のサーバー ID（未設定はグローバル） |
+| `GUILD_ID` | — | ギルドコマンドとして登録する場合のサーバー ID。未設定はグローバル（反映まで最大1時間） |
 | `NOTIFICATION_CHANNEL_ID` | notify | notify モジュール使用時の通知先チャンネル ID |
 | `API_TOKEN` | notify | notify モジュールの Bearer 認証トークン（`openssl rand -hex 32` 推奨） |
 | `API_ADDR` | — | notify モジュールの HTTP リッスンアドレス（デフォルト `:8080`） |
@@ -67,7 +69,7 @@ curl -i -X POST http://localhost:8080/notify \
 
 ## Kubernetes へのデプロイ
 
-`Secret` でトークンを管理し、`Deployment` で bot を動かす例:
+`Secret` でトークンを管理し、`Deployment` と `Service` で bot を動かす例:
 
 ```yaml
 apiVersion: v1
@@ -96,7 +98,7 @@ spec:
     spec:
       containers:
         - name: bot
-          image: ghcr.io/<owner>/botama:latest
+          image: ghcr.io/tamara1031/botama:latest
           env:
             - name: DISCORD_TOKEN
               valueFrom:
@@ -159,7 +161,9 @@ curl -X POST http://botama.default.svc.cluster.local:8080/notify \
 
 ### ping
 
-`MODULES_ENABLED` に `ping` を追加すると有効になる。Discord の `/ping` コマンドに応答する。
+`MODULES_ENABLED` に `ping` を追加すると有効になる。Discord の `/ping` スラッシュコマンドに `pong` で応答する。
+
+`GUILD_ID` を設定するとギルドコマンドとして即時反映される（テスト時推奨）。未設定の場合はグローバルコマンドとして登録され、反映まで最大1時間かかる。
 
 ### notify
 
