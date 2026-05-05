@@ -39,15 +39,33 @@ func (p *Ping) Register(s *discordgo.Session) error {
 		if i.ApplicationCommandData().Name != "ping" {
 			return
 		}
+		userID := interactionUserID(i.Interaction)
+		slog.Info("ping: received",
+			"user", userID,
+			"guild", i.GuildID,
+			"channel", i.ChannelID,
+		)
 		if err := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,
 			Data: &discordgo.InteractionResponseData{Content: "pong"},
 		}); err != nil {
 			slog.Error("ping: failed to respond", "error", err)
+			return
 		}
+		slog.Info("ping: responded", "user", userID)
 	})
-	slog.Info("ping module registered")
+	slog.Info("ping module registered", "command_id", cmd.ID)
 	return nil
+}
+
+func interactionUserID(i *discordgo.Interaction) string {
+	if i.Member != nil {
+		return i.Member.User.ID
+	}
+	if i.User != nil {
+		return i.User.ID
+	}
+	return ""
 }
 
 func (p *Ping) Unregister() error {
