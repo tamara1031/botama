@@ -1,0 +1,51 @@
+package bot
+
+import (
+	"fmt"
+
+	"github.com/bwmarrin/discordgo"
+)
+
+type registry struct {
+	modules map[string]Module
+	active  map[string]bool
+}
+
+func newRegistry() *registry {
+	return &registry{
+		modules: make(map[string]Module),
+		active:  make(map[string]bool),
+	}
+}
+
+func (r *registry) add(m Module) {
+	r.modules[m.Name()] = m
+}
+
+func (r *registry) startEnabled(s *discordgo.Session, names []string) error {
+	for _, name := range names {
+		m, ok := r.modules[name]
+		if !ok {
+			return fmt.Errorf("module %q is not registered", name)
+		}
+		if err := m.Register(s); err != nil {
+			return fmt.Errorf("module %q: %w", name, err)
+		}
+		r.active[name] = true
+	}
+	return nil
+}
+
+func (r *registry) stopAll() error {
+	var firstErr error
+	for name, m := range r.modules {
+		if !r.active[name] {
+			continue
+		}
+		if err := m.Unregister(); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("module %q unregister: %w", name, err)
+		}
+		r.active[name] = false
+	}
+	return firstErr
+}

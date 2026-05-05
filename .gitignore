@@ -1,0 +1,10 @@
+/bot
+*.exe
+*.test
+*.out
+.env
+*.env
+.idea/
+.vscode/
+*.swp
+*.swo
