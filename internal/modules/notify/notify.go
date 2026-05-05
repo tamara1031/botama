@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -21,15 +22,20 @@ type postBody struct {
 }
 
 type Notify struct {
-	token   string
-	server  *http.Server
-	session *discordgo.Session
+	token            string
+	defaultChannelID string
+	server           *http.Server
+	session          *discordgo.Session
 }
 
-func New(token, addr string) *Notify {
-	n := &Notify{token: token}
+func New(token, defaultChannelID, addr string) *Notify {
+	n := &Notify{
+		token:            token,
+		defaultChannelID: defaultChannelID,
+	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /notify/{channelID}", n.handle)
+	mux.HandleFunc("POST /notify/{channelID}", n.handleChannel)
+	mux.HandleFunc("POST /notify", n.handleDefault)
 	n.server = &http.Server{
 		Addr:              addr,
 		Handler:           mux,
@@ -70,14 +76,26 @@ func (n *Notify) Unregister() error {
 	return nil
 }
 
-func (n *Notify) handle(w http.ResponseWriter, r *http.Request) {
+// handleDefault sends to the configured default channel (backward compat).
+func (n *Notify) handleDefault(w http.ResponseWriter, r *http.Request) {
+	if n.defaultChannelID == "" {
+		http.Error(w, "no default channel configured", http.StatusNotFound)
+		return
+	}
+	n.send(w, r, n.defaultChannelID)
+}
+
+// handleChannel sends to the channel ID supplied in the path.
+func (n *Notify) handleChannel(w http.ResponseWriter, r *http.Request) {
+	n.send(w, r, r.PathValue("channelID"))
+}
+
+func (n *Notify) send(w http.ResponseWriter, r *http.Request, channelID string) {
 	if !n.authorized(r) {
 		slog.Warn("notify: unauthorized", "remote", r.RemoteAddr)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-
-	channelID := r.PathValue("channelID")
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var body postBody
@@ -91,6 +109,12 @@ func (n *Notify) handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if _, err := n.session.ChannelMessageSend(channelID, body.Content); err != nil {
+		var restErr *discordgo.RESTError
+		if errors.As(err, &restErr) && restErr.Response.StatusCode == http.StatusNotFound {
+			slog.Warn("notify: channel not found", "channel", channelID)
+			http.Error(w, "channel not found", http.StatusNotFound)
+			return
+		}
 		slog.Error("notify: send failed", "error", err, "channel", channelID)
 		http.Error(w, "failed to send", http.StatusInternalServerError)
 		return

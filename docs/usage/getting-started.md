@@ -22,6 +22,7 @@
 | `MODULES_ENABLED` | — | 有効化するモジュール名（カンマ区切り）。未設定の場合は何も起動しない |
 | `GUILD_ID` | — | ギルドコマンドとして登録する場合のサーバー ID。未設定はグローバル（反映まで最大1時間） |
 | `API_TOKEN` | notify | notify モジュールの Bearer 認証トークン（`openssl rand -hex 32` 推奨） |
+| `NOTIFICATION_CHANNEL_ID` | — | `POST /notify`（チャンネル ID なし）のデフォルト送信先。省略時は当該エンドポイントが 404 を返す |
 | `API_ADDR` | — | notify モジュールの HTTP リッスンアドレス（デフォルト `:8080`） |
 
 ## ローカル実行
@@ -45,14 +46,24 @@ make down      # 停止
 
 ### notify モジュールのテスト
 
-送信先チャンネルの ID をパスに指定して呼び出す:
-
 ```bash
-# 成功 → 204 No Content、Discord に通知が届く
+# チャンネル ID をパスで指定 → 204 No Content
 curl -i -X POST http://localhost:8080/notify/509717668790534146 \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"content": "テスト通知"}'
+
+# デフォルトチャンネル（NOTIFICATION_CHANNEL_ID が必要）→ 204 No Content
+curl -i -X POST http://localhost:8080/notify \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "テスト通知"}'
+
+# 存在しないチャンネル ID → 404 channel not found
+curl -i -X POST http://localhost:8080/notify/000000000000000000 \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "テスト"}'
 
 # 認証なし → 401
 curl -i -X POST http://localhost:8080/notify/509717668790534146 \
@@ -162,7 +173,10 @@ curl -X POST http://botama.default.svc.cluster.local:8080/notify/509717668790534
 
 `MODULES_ENABLED` に `notify` を追加すると有効になる。`API_TOKEN` が必須。
 
-送信先チャンネルの Discord ID をパスに指定する:
+| エンドポイント | 説明 |
+|---|---|
+| `POST /notify/{channelID}` | パスで指定した Discord チャンネル ID に送信 |
+| `POST /notify` | `NOTIFICATION_CHANNEL_ID` のデフォルトチャンネルに送信（後方互換） |
 
 ```
 POST /notify/{channelID}
@@ -175,6 +189,7 @@ Content-Type: application/json
 レスポンス:
 - `204 No Content` — 送信成功
 - `401 Unauthorized` — 認証失敗
+- `404 Not Found` — チャンネルが見つからない（ID 誤り、または bot 未参加）
 - `422 Unprocessable Entity` — `content` が空
 
 ## 新しいモジュールの追加

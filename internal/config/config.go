@@ -7,11 +7,12 @@ import (
 )
 
 type Config struct {
-	Token          string
-	GuildID        string
-	APIToken       string
-	APIAddr        string
-	EnabledModules []string
+	Token            string
+	GuildID          string
+	APIToken         string
+	APIAddr          string
+	DefaultChannelID string
+	EnabledModules   []string
 }
 
 func Load() (*Config, error) {
@@ -35,10 +36,11 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		Token:          token,
-		GuildID:        os.Getenv("GUILD_ID"),
-		APIToken:       os.Getenv("API_TOKEN"),
-		APIAddr:        apiAddr,
-		EnabledModules: modules,
+		Token:            token,
+		GuildID:          os.Getenv("GUILD_ID"),
+		APIToken:         os.Getenv("API_TOKEN"),
+		APIAddr:          apiAddr,
+		DefaultChannelID: os.Getenv("NOTIFICATION_CHANNEL_ID"),
+		EnabledModules:   modules,
 	}, nil
 }
