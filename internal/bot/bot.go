@@ -34,9 +34,18 @@ func (b *Bot) RegisterModule(m Module) {
 }
 
 func (b *Bot) Start() error {
+	ready := make(chan struct{})
+	remove := b.session.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
+		slog.Info("connected", "username", r.User.Username, "id", r.User.ID)
+		close(ready)
+	})
+	defer remove()
+
 	if err := b.session.Open(); err != nil {
 		return fmt.Errorf("open session: %w", err)
 	}
+	<-ready
+
 	if err := b.registry.startEnabled(b.session, b.cfg.EnabledModules); err != nil {
 		_ = b.session.Close()
 		return fmt.Errorf("start modules: %w", err)
