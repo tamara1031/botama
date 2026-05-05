@@ -18,7 +18,10 @@
 |---|---|---|
 | `DISCORD_TOKEN` | ✅ | Discord bot トークン |
 | `MODULES_ENABLED` | — | 有効化するモジュール名（カンマ区切り）。未設定の場合は何も起動しない |
-| `NOTIFICATION_CHANNEL_ID` | — | 将来の通知モジュール用チャンネル ID（現時点では未使用） |
+| `GUILD_ID` | — | ギルドコマンドとして登録する場合のサーバー ID（未設定はグローバル） |
+| `NOTIFICATION_CHANNEL_ID` | notify | notify モジュール使用時の通知先チャンネル ID |
+| `API_TOKEN` | notify | notify モジュールの Bearer 認証トークン（`openssl rand -hex 32` 推奨） |
+| `API_ADDR` | — | notify モジュールの HTTP リッスンアドレス（デフォルト `:8080`） |
 
 ## ローカル実行
 
@@ -56,10 +59,12 @@ docker run --rm \
 apiVersion: v1
 kind: Secret
 metadata:
-  name: discord-bot-secret
+  name: botama-secret
 type: Opaque
 stringData:
-  token: "your_discord_token"
+  discord-token: "your_discord_token"
+  api-token: "your_api_token"         # openssl rand -hex 32
+  channel-id: "your_channel_id"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -82,10 +87,24 @@ spec:
             - name: DISCORD_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: discord-bot-secret
-                  key: token
+                  name: botama-secret
+                  key: discord-token
+            - name: API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: botama-secret
+                  key: api-token
+            - name: NOTIFICATION_CHANNEL_ID
+              valueFrom:
+                secretKeyRef:
+                  name: botama-secret
+                  key: channel-id
             - name: MODULES_ENABLED
-              value: "ping"
+              value: "ping,notify"
+          ports:
+            - name: api
+              containerPort: 8080
+              protocol: TCP
           resources:
             requests:
               memory: "32Mi"
@@ -97,19 +116,50 @@ spec:
             runAsNonRoot: true
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: botama
+spec:
+  selector:
+    app: botama
+  ports:
+    - port: 8080
+      targetPort: api
+  type: ClusterIP
 ```
 
 > **注意**: Discord bot は WebSocket 接続のため `replicas: 1` 推奨。複数レプリカを立てると同じイベントを重複処理する。
+
+クラスタ内の他 Pod からの呼び出し例:
+
+```bash
+curl -X POST http://botama.default.svc.cluster.local:8080/notify \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "デプロイ完了"}'
+```
 
 ## 利用可能なモジュール
 
 ### ping
 
-`MODULES_ENABLED` に `ping` を追加すると有効になる。
+`MODULES_ENABLED` に `ping` を追加すると有効になる。Discord の `/ping` コマンドに応答する。
 
-| コマンド | 応答 |
-|---|---|
-| `!ping` | `pong` |
+### notify
+
+`MODULES_ENABLED` に `notify` を追加すると有効になる。`NOTIFICATION_CHANNEL_ID` と `API_TOKEN` が必須。
+
+```
+POST /notify
+Authorization: Bearer <API_TOKEN>
+Content-Type: application/json
+
+{"content": "送りたいメッセージ"}
+```
+
+レスポンス: 成功時 `204 No Content`
 
 ## 新しいモジュールの追加
 

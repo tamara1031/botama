@@ -10,6 +10,8 @@ type Config struct {
 	Token                 string
 	GuildID               string
 	NotificationChannelID string
+	APIToken              string
+	APIAddr               string
 	EnabledModules        []string
 }
 
@@ -28,10 +30,17 @@ func Load() (*Config, error) {
 		}
 	}
 
+	apiAddr := os.Getenv("API_ADDR")
+	if apiAddr == "" {
+		apiAddr = ":8080"
+	}
+
 	return &Config{
 		Token:                 token,
 		GuildID:               os.Getenv("GUILD_ID"),
 		NotificationChannelID: os.Getenv("NOTIFICATION_CHANNEL_ID"),
+		APIToken:              os.Getenv("API_TOKEN"),
+		APIAddr:               apiAddr,
 		EnabledModules:        modules,
 	}, nil
 }

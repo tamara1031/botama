@@ -8,6 +8,7 @@ import (
 
 	"github.com/tamara1031/botama/internal/bot"
 	"github.com/tamara1031/botama/internal/config"
+	"github.com/tamara1031/botama/internal/modules/notify"
 	"github.com/tamara1031/botama/internal/modules/ping"
 )
 
@@ -25,6 +26,7 @@ func main() {
 	}
 
 	b.RegisterModule(ping.New(cfg.GuildID))
+	b.RegisterModule(notify.New(cfg.APIToken, cfg.NotificationChannelID, cfg.APIAddr))
 
 	if err := b.Start(); err != nil {
 		slog.Error("start", "error", err)
