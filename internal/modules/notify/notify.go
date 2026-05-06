@@ -27,21 +27,28 @@ type postBody struct {
 	Content string `json:"content"`
 }
 
-type Notify struct {
-	token            string
-	defaultChannelID string
-	server           *http.Server
-	sender           Sender
+type Channels struct {
+	Info     string
+	Warning  string
+	Critical string
 }
 
-func New(token, defaultChannelID, addr string) *Notify {
+type Notify struct {
+	token    string
+	channels Channels
+	server   *http.Server
+	sender   Sender
+}
+
+func New(token string, channels Channels, addr string) *Notify {
 	n := &Notify{
-		token:            token,
-		defaultChannelID: defaultChannelID,
+		token:    token,
+		channels: channels,
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /notify/{channelID}", n.handleChannel)
-	mux.HandleFunc("POST /notify", n.handleDefault)
+	mux.HandleFunc("POST /notify/info", n.handleInfo)
+	mux.HandleFunc("POST /notify/warning", n.handleWarning)
+	mux.HandleFunc("POST /notify/critical", n.handleCritical)
 	n.server = &http.Server{
 		Addr:              addr,
 		Handler:           mux,
@@ -82,21 +89,27 @@ func (n *Notify) Unregister() error {
 	return nil
 }
 
-// handleDefault sends to the configured default channel (backward compat).
-func (n *Notify) handleDefault(w http.ResponseWriter, r *http.Request) {
-	if n.defaultChannelID == "" {
-		http.Error(w, "no default channel configured", http.StatusNotFound)
+func (n *Notify) handleInfo(w http.ResponseWriter, r *http.Request) {
+	n.sendLevel(w, r, "info", n.channels.Info)
+}
+
+func (n *Notify) handleWarning(w http.ResponseWriter, r *http.Request) {
+	n.sendLevel(w, r, "warning", n.channels.Warning)
+}
+
+func (n *Notify) handleCritical(w http.ResponseWriter, r *http.Request) {
+	n.sendLevel(w, r, "critical", n.channels.Critical)
+}
+
+func (n *Notify) sendLevel(w http.ResponseWriter, r *http.Request, level, channelID string) {
+	if channelID == "" {
+		http.Error(w, "channel not configured", http.StatusNotFound)
 		return
 	}
-	n.send(w, r, n.defaultChannelID)
+	n.send(w, r, level, channelID)
 }
 
-// handleChannel sends to the channel ID supplied in the path.
-func (n *Notify) handleChannel(w http.ResponseWriter, r *http.Request) {
-	n.send(w, r, r.PathValue("channelID"))
-}
-
-func (n *Notify) send(w http.ResponseWriter, r *http.Request, channelID string) {
+func (n *Notify) send(w http.ResponseWriter, r *http.Request, level, channelID string) {
 	if !n.authorized(r) {
 		slog.Warn("notify: unauthorized", "remote", r.RemoteAddr)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -117,16 +130,16 @@ func (n *Notify) send(w http.ResponseWriter, r *http.Request, channelID string) 
 	if _, err := n.sender.ChannelMessageSend(channelID, body.Content); err != nil {
 		var restErr *discordgo.RESTError
 		if errors.As(err, &restErr) && restErr.Response.StatusCode == http.StatusNotFound {
-			slog.Warn("notify: channel not found", "channel", channelID)
+			slog.Warn("notify: channel not found", "level", level, "channel", channelID)
 			http.Error(w, "channel not found", http.StatusNotFound)
 			return
 		}
-		slog.Error("notify: send failed", "error", err, "channel", channelID)
+		slog.Error("notify: send failed", "error", err, "level", level, "channel", channelID)
 		http.Error(w, "failed to send", http.StatusInternalServerError)
 		return
 	}
 
-	slog.Info("notify: sent", "channel", channelID, "remote", r.RemoteAddr)
+	slog.Info("notify: sent", "level", level, "channel", channelID, "remote", r.RemoteAddr)
 	w.WriteHeader(http.StatusNoContent)
 }
 

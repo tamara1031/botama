@@ -7,12 +7,14 @@ import (
 )
 
 type Config struct {
-	Token            string
-	GuildID          string
-	APIToken         string
-	APIAddr          string
-	DefaultChannelID string
-	EnabledModules   []string
+	Token                  string
+	GuildID                string
+	APIToken               string
+	APIAddr                string
+	NotifyInfoChannelID    string
+	NotifyWarningChannelID string
+	NotifyCriticalChannelID string
+	EnabledModules         []string
 }
 
 func Load() (*Config, error) {
@@ -36,11 +38,13 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		Token:            token,
-		GuildID:          os.Getenv("GUILD_ID"),
-		APIToken:         os.Getenv("API_TOKEN"),
-		APIAddr:          apiAddr,
-		DefaultChannelID: os.Getenv("NOTIFICATION_CHANNEL_ID"),
-		EnabledModules:   modules,
+		Token:                   token,
+		GuildID:                 os.Getenv("GUILD_ID"),
+		APIToken:                os.Getenv("API_TOKEN"),
+		APIAddr:                 apiAddr,
+		NotifyInfoChannelID:     os.Getenv("NOTIFY_INFO_CHANNEL_ID"),
+		NotifyWarningChannelID:  os.Getenv("NOTIFY_WARNING_CHANNEL_ID"),
+		NotifyCriticalChannelID: os.Getenv("NOTIFY_CRITICAL_CHANNEL_ID"),
+		EnabledModules:          modules,
 	}, nil
 }
