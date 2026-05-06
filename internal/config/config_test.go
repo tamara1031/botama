@@ -40,6 +40,8 @@ func TestLoad_Defaults(t *testing.T) {
 func TestLoad_ModulesParsed(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "tok")
 	t.Setenv("MODULES_ENABLED", "ping, notify , ping")
+	// notify module requires API_TOKEN
+	t.Setenv("API_TOKEN", "required-for-notify")
 
 	cfg, err := Load()
 	if err != nil {
@@ -107,5 +109,43 @@ func TestLoad_AllFields(t *testing.T) {
 	}
 	if len(cfg.EnabledModules) != 2 {
 		t.Errorf("EnabledModules: want 2 entries, got %v", cfg.EnabledModules)
+	}
+}
+
+// --- validate ---
+
+func TestLoad_NotifyModuleRequiresAPIToken(t *testing.T) {
+	t.Setenv("DISCORD_TOKEN", "tok")
+	t.Setenv("MODULES_ENABLED", "notify")
+	t.Setenv("API_TOKEN", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when notify is enabled without API_TOKEN")
+	}
+}
+
+func TestLoad_NotifyModuleWithAPIToken(t *testing.T) {
+	t.Setenv("DISCORD_TOKEN", "tok")
+	t.Setenv("MODULES_ENABLED", "notify")
+	t.Setenv("API_TOKEN", "secret")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Notify.APIToken != "secret" {
+		t.Errorf("Notify.APIToken: want secret, got %q", cfg.Notify.APIToken)
+	}
+}
+
+func TestLoad_PingModuleNoExtraReqs(t *testing.T) {
+	t.Setenv("DISCORD_TOKEN", "tok")
+	t.Setenv("MODULES_ENABLED", "ping")
+	t.Setenv("API_TOKEN", "")
+
+	_, err := Load()
+	if err != nil {
+		t.Fatalf("ping module should not require API_TOKEN, got: %v", err)
 	}
 }
