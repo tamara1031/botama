@@ -110,6 +110,45 @@ func TestRegistry_StopAll_ReturnsFirstError(t *testing.T) {
 	}
 }
 
+func TestRegistry_StopAll_CollectsAllErrors(t *testing.T) {
+	r := newRegistry()
+	a := &mockModule{name: "a", unregErr: errors.New("err-a")}
+	b := &mockModule{name: "b", unregErr: errors.New("err-b")}
+	r.add(a)
+	r.add(b)
+	_ = r.startEnabled(nil, []string{"a", "b"})
+
+	err := r.stopAll()
+	if err == nil {
+		t.Fatal("expected combined error")
+	}
+	if !errors.Is(err, a.unregErr) {
+		t.Error("expected err-a to be wrapped in the combined error")
+	}
+	if !errors.Is(err, b.unregErr) {
+		t.Error("expected err-b to be wrapped in the combined error")
+	}
+}
+
+func TestRegistry_StopAll_UnregistersAllActive(t *testing.T) {
+	r := newRegistry()
+	first := &mockModule{name: "first"}
+	second := &mockModule{name: "second"}
+	third := &mockModule{name: "third"}
+
+	r.add(first)
+	r.add(second)
+	r.add(third)
+	_ = r.startEnabled(nil, []string{"first", "second", "third"})
+
+	if err := r.stopAll(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !first.unregistered || !second.unregistered || !third.unregistered {
+		t.Error("all active modules should have been unregistered")
+	}
+}
+
 func TestRegistry_StopAll_MarksInactive(t *testing.T) {
 	r := newRegistry()
 	m := &mockModule{name: "m"}
