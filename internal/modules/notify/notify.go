@@ -29,20 +29,30 @@ type Notify struct {
 }
 
 func New(token, defaultChannelID, addr string) *Notify {
-	n := &Notify{
-		token:            token,
-		defaultChannelID: defaultChannelID,
-	}
+	n := &Notify{token: token, defaultChannelID: defaultChannelID}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /notify/{channelID}", n.handleChannel)
 	mux.HandleFunc("POST /notify", n.handleDefault)
 	n.server = &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           tokenAuth(token, mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      10 * time.Second,
 	}
 	return n
+}
+
+// tokenAuth is an HTTP middleware that enforces Bearer token authentication.
+func tokenAuth(token string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if subtle.ConstantTimeCompare([]byte(t), []byte(token)) != 1 {
+			slog.Warn("notify: unauthorized", "remote", r.RemoteAddr)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (n *Notify) Name() string { return "notify" }
@@ -51,7 +61,6 @@ func (n *Notify) Register(s *discordgo.Session) error {
 	if n.token == "" {
 		return fmt.Errorf("notify: API_TOKEN is required")
 	}
-
 	n.session = s
 
 	ln, err := net.Listen("tcp", n.server.Addr)
@@ -91,12 +100,6 @@ func (n *Notify) handleChannel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (n *Notify) send(w http.ResponseWriter, r *http.Request, channelID string) {
-	if !n.authorized(r) {
-		slog.Warn("notify: unauthorized", "remote", r.RemoteAddr)
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var body postBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -124,7 +127,3 @@ func (n *Notify) send(w http.ResponseWriter, r *http.Request, channelID string) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (n *Notify) authorized(r *http.Request) bool {
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	return subtle.ConstantTimeCompare([]byte(token), []byte(n.token)) == 1
-}
