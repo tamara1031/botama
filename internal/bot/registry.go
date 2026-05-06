@@ -34,6 +34,9 @@ func (r *registry) startEnabled(s *discordgo.Session, names []string) error {
 		if !ok {
 			return fmt.Errorf("module %q is not registered", name)
 		}
+		if r.active[name] {
+			return fmt.Errorf("module %q is already running", name)
+		}
 		if err := m.Register(s); err != nil {
 			return fmt.Errorf("module %q: %w", name, err)
 		}

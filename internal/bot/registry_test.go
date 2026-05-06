@@ -161,6 +161,19 @@ func TestRegistry_StopAll_MarksInactive(t *testing.T) {
 	}
 }
 
+func TestRegistry_StartEnabled_AlreadyRunning(t *testing.T) {
+	r := newRegistry()
+	m := &mockModule{name: "dup"}
+	r.add(m)
+	if err := r.startEnabled(nil, []string{"dup"}); err != nil {
+		t.Fatalf("first start: unexpected error: %v", err)
+	}
+	err := r.startEnabled(nil, []string{"dup"})
+	if err == nil {
+		t.Fatal("expected error when starting an already-running module")
+	}
+}
+
 func TestRegistry_Add_OverwritesSameName(t *testing.T) {
 	r := newRegistry()
 	first := &mockModule{name: "dup"}
