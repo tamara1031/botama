@@ -5,52 +5,72 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/bwmarrin/discordgo"
 )
 
-// fakeSender is a test double for messageSender.
-type fakeSender struct {
-	sentChannel string
+// mockSender records calls and returns configurable errors.
+type mockSender struct {
+	sentTo      string
 	sentContent string
 	err         error
 }
 
-func (f *fakeSender) ChannelMessageSend(channelID, content string, _ ...discordgo.RequestOption) (*discordgo.Message, error) {
-	f.sentChannel = channelID
-	f.sentContent = content
-	return nil, f.err
+func (m *mockSender) ChannelMessageSend(channelID, content string, _ ...discordgo.RequestOption) (*discordgo.Message, error) {
+	m.sentTo = channelID
+	m.sentContent = content
+	if m.err != nil {
+		return nil, m.err
+	}
+	return &discordgo.Message{ID: "fake-id"}, nil
 }
 
-// notifyWithSender builds a Notify wired to a fake sender so tests skip
-// the real TCP listener and Discord session.
-func notifyWithSender(token, defaultChannelID string, sender messageSender) *Notify {
-	n := New(token, defaultChannelID, ":0")
-	n.sender = sender
-	return n
+// restError builds a *discordgo.RESTError with the given HTTP status code.
+func restError(status int) *discordgo.RESTError {
+	return &discordgo.RESTError{
+		Response: &http.Response{StatusCode: status},
+		Message:  &discordgo.APIErrorMessage{},
+	}
 }
 
-func TestTokenAuth_unauthorized(t *testing.T) {
+// newNotify constructs a Notify with a fake sender, skipping the TCP listener.
+func newNotify(token, defaultChannel string, sender Sender) *Notify {
+	return &Notify{
+		token:            token,
+		defaultChannelID: defaultChannel,
+		sender:           sender,
+	}
+}
+
+// --- tokenAuth middleware ---
+
+func TestTokenAuth_Unauthorized(t *testing.T) {
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	h := tokenAuth("secret", inner)
 
-	for _, hdr := range []string{"", "wrong", "Bearer wrong"} {
+	cases := []struct{ hdr string }{
+		{""},
+		{"wrong"},
+		{"Bearer wrong"},
+	}
+	for _, tc := range cases {
 		req := httptest.NewRequest(http.MethodPost, "/", nil)
-		if hdr != "" {
-			req.Header.Set("Authorization", hdr)
+		if tc.hdr != "" {
+			req.Header.Set("Authorization", tc.hdr)
 		}
 		rr := httptest.NewRecorder()
 		h.ServeHTTP(rr, req)
 		if rr.Code != http.StatusUnauthorized {
-			t.Errorf("header %q: got %d, want %d", hdr, rr.Code, http.StatusUnauthorized)
+			t.Errorf("header %q: got %d, want %d", tc.hdr, rr.Code, http.StatusUnauthorized)
 		}
 	}
 }
 
-func TestTokenAuth_authorized(t *testing.T) {
+func TestTokenAuth_Authorized(t *testing.T) {
 	called := false
 	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
@@ -71,78 +91,144 @@ func TestTokenAuth_authorized(t *testing.T) {
 	}
 }
 
-func TestHandleDefault_noChannel(t *testing.T) {
-	n := notifyWithSender("tok", "", &fakeSender{})
-	req := httptest.NewRequest(http.MethodPost, "/notify", bytes.NewBufferString(`{"content":"hi"}`))
-	rr := httptest.NewRecorder()
-	n.handleDefault(rr, req)
-	if rr.Code != http.StatusNotFound {
-		t.Errorf("got %d, want %d", rr.Code, http.StatusNotFound)
+// --- handleDefault ---
+
+func TestHandleDefault_NoDefaultChannel(t *testing.T) {
+	n := newNotify("tok", "", nil)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/notify", nil)
+
+	n.handleDefault(w, r)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", w.Code)
 	}
 }
 
-func TestSend_emptyContent(t *testing.T) {
-	n := notifyWithSender("tok", "ch1", &fakeSender{})
-	req := httptest.NewRequest(http.MethodPost, "/notify", bytes.NewBufferString(`{"content":""}`))
-	rr := httptest.NewRecorder()
-	n.send(rr, req, "ch1")
-	if rr.Code != http.StatusUnprocessableEntity {
-		t.Errorf("got %d, want %d", rr.Code, http.StatusUnprocessableEntity)
+func TestHandleDefault_SendsToDefaultChannel(t *testing.T) {
+	mock := &mockSender{}
+	n := newNotify("tok", "chan-123", mock)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/notify", bytes.NewBufferString(`{"content":"hello"}`))
+
+	n.handleDefault(w, r)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d: %s", w.Code, w.Body)
+	}
+	if mock.sentTo != "chan-123" {
+		t.Fatalf("want sentTo=chan-123, got %q", mock.sentTo)
+	}
+	if mock.sentContent != "hello" {
+		t.Fatalf("want sentContent=hello, got %q", mock.sentContent)
 	}
 }
 
-func TestSend_invalidJSON(t *testing.T) {
-	n := notifyWithSender("tok", "ch1", &fakeSender{})
-	req := httptest.NewRequest(http.MethodPost, "/notify", bytes.NewBufferString(`not-json`))
-	rr := httptest.NewRecorder()
-	n.send(rr, req, "ch1")
-	if rr.Code != http.StatusBadRequest {
-		t.Errorf("got %d, want %d", rr.Code, http.StatusBadRequest)
+// --- handleChannel ---
+
+func TestHandleChannel_SendsToPathChannel(t *testing.T) {
+	mock := &mockSender{}
+	n := newNotify("tok", "default-ch", mock)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /notify/{channelID}", n.handleChannel)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	body := bytes.NewBufferString(`{"content":"hi there"}`)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/notify/ch-456", body)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("want 204, got %d", resp.StatusCode)
+	}
+	if mock.sentTo != "ch-456" {
+		t.Fatalf("want sentTo=ch-456, got %q", mock.sentTo)
 	}
 }
 
-func TestSend_success(t *testing.T) {
-	fs := &fakeSender{}
-	n := notifyWithSender("tok", "ch1", fs)
-	req := httptest.NewRequest(http.MethodPost, "/notify", bytes.NewBufferString(`{"content":"hello"}`))
-	rr := httptest.NewRecorder()
-	n.send(rr, req, "ch42")
+// --- send: body validation ---
 
-	if rr.Code != http.StatusNoContent {
-		t.Errorf("got %d, want %d", rr.Code, http.StatusNoContent)
-	}
-	if fs.sentChannel != "ch42" {
-		t.Errorf("sentChannel = %q, want %q", fs.sentChannel, "ch42")
-	}
-	if fs.sentContent != "hello" {
-		t.Errorf("sentContent = %q, want %q", fs.sentContent, "hello")
+func TestSend_BadJSON(t *testing.T) {
+	n := newNotify("tok", "ch", &mockSender{})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("not-json"))
+
+	n.send(w, r, "ch")
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d", w.Code)
 	}
 }
 
-func TestSend_discordNotFound(t *testing.T) {
-	restErr := &discordgo.RESTError{
-		Response: &http.Response{StatusCode: http.StatusNotFound},
-		Message:  &discordgo.APIErrorMessage{},
-	}
-	fs := &fakeSender{err: restErr}
-	n := notifyWithSender("tok", "", fs)
-	req := httptest.NewRequest(http.MethodPost, "/notify", bytes.NewBufferString(`{"content":"hi"}`))
-	rr := httptest.NewRecorder()
-	n.send(rr, req, "bad-channel")
+func TestSend_EmptyContent(t *testing.T) {
+	n := newNotify("tok", "ch", &mockSender{})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":""}`))
 
-	if rr.Code != http.StatusNotFound {
-		t.Errorf("got %d, want %d", rr.Code, http.StatusNotFound)
+	n.send(w, r, "ch")
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422, got %d", w.Code)
 	}
 }
 
-func TestSend_discordError(t *testing.T) {
-	fs := &fakeSender{err: fmt.Errorf("network error")}
-	n := notifyWithSender("tok", "", fs)
-	req := httptest.NewRequest(http.MethodPost, "/notify", bytes.NewBufferString(`{"content":"hi"}`))
-	rr := httptest.NewRecorder()
-	n.send(rr, req, "ch1")
+func TestSend_MissingContentField(t *testing.T) {
+	n := newNotify("tok", "ch", &mockSender{})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{}`))
 
-	if rr.Code != http.StatusInternalServerError {
-		t.Errorf("got %d, want %d", rr.Code, http.StatusInternalServerError)
+	n.send(w, r, "ch")
+
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("want 422, got %d", w.Code)
+	}
+}
+
+// --- send: Discord error handling ---
+
+func TestSend_ChannelNotFound(t *testing.T) {
+	mock := &mockSender{err: restError(http.StatusNotFound)}
+	n := newNotify("tok", "ch", mock)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":"hi"}`))
+
+	n.send(w, r, "unknown-ch")
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", w.Code)
+	}
+}
+
+func TestSend_DiscordInternalError(t *testing.T) {
+	mock := &mockSender{err: fmt.Errorf("discord exploded")}
+	n := newNotify("tok", "ch", mock)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":"hi"}`))
+
+	n.send(w, r, "ch")
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("want 500, got %d", w.Code)
+	}
+}
+
+func TestSend_Success(t *testing.T) {
+	mock := &mockSender{}
+	n := newNotify("tok", "ch", mock)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":"works!"}`))
+
+	n.send(w, r, "ch")
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d", w.Code)
+	}
+	if mock.sentContent != "works!" {
+		t.Fatalf("want sentContent=works!, got %q", mock.sentContent)
 	}
 }

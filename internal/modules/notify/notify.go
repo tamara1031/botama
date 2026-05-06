@@ -17,20 +17,21 @@ import (
 
 const maxBodyBytes = 4 * 1024
 
-type postBody struct {
-	Content string `json:"content"`
+// Sender is the subset of discordgo.Session used to post messages.
+// *discordgo.Session satisfies this interface automatically.
+type Sender interface {
+	ChannelMessageSend(channelID string, content string, options ...discordgo.RequestOption) (*discordgo.Message, error)
 }
 
-// messageSender is the subset of discordgo.Session used by this module.
-type messageSender interface {
-	ChannelMessageSend(channelID, content string, options ...discordgo.RequestOption) (*discordgo.Message, error)
+type postBody struct {
+	Content string `json:"content"`
 }
 
 type Notify struct {
 	token            string
 	defaultChannelID string
 	server           *http.Server
-	sender           messageSender
+	sender           Sender
 }
 
 func New(token, defaultChannelID, addr string) *Notify {
@@ -66,6 +67,7 @@ func (n *Notify) Register(s *discordgo.Session) error {
 	if n.token == "" {
 		return fmt.Errorf("notify: API_TOKEN is required")
 	}
+
 	n.sender = s
 
 	ln, err := net.Listen("tcp", n.server.Addr)
@@ -131,4 +133,3 @@ func (n *Notify) send(w http.ResponseWriter, r *http.Request, channelID string) 
 	slog.Info("notify: sent", "channel", channelID, "remote", r.RemoteAddr)
 	w.WriteHeader(http.StatusNoContent)
 }
-

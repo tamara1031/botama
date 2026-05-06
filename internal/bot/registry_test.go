@@ -7,74 +7,103 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-// fakeModule is a test double that records Register/Unregister calls.
-type fakeModule struct {
+// mockModule is a Module that records calls and returns configurable errors.
+type mockModule struct {
 	name         string
-	registerErr  error
-	unregisterErr error
 	registered   bool
 	unregistered bool
+	registerErr  error
+	unregErr     error
 }
 
-func (f *fakeModule) Name() string { return f.name }
+func (m *mockModule) Name() string { return m.name }
 
-func (f *fakeModule) Register(_ *discordgo.Session) error {
-	f.registered = true
-	return f.registerErr
+func (m *mockModule) Register(_ *discordgo.Session) error {
+	m.registered = true
+	return m.registerErr
 }
 
-func (f *fakeModule) Unregister() error {
-	f.unregistered = true
-	return f.unregisterErr
+func (m *mockModule) Unregister() error {
+	m.unregistered = true
+	return m.unregErr
 }
 
-func TestRegistry_startEnabled_unknownModule(t *testing.T) {
+// --- add / startEnabled ---
+
+func TestRegistry_StartEnabled_UnknownModule(t *testing.T) {
 	r := newRegistry()
-	err := r.startEnabled(nil, []string{"missing"})
+	err := r.startEnabled(nil, []string{"ghost"})
 	if err == nil {
 		t.Fatal("expected error for unregistered module")
 	}
 }
 
-func TestRegistry_startEnabled_success(t *testing.T) {
+func TestRegistry_StartEnabled_RegisterError(t *testing.T) {
 	r := newRegistry()
-	m := &fakeModule{name: "ping"}
-	r.add(m)
-
-	if err := r.startEnabled(nil, []string{"ping"}); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !m.registered {
-		t.Error("module.Register was not called")
-	}
-	if !r.active["ping"] {
-		t.Error("module not marked active after start")
-	}
-}
-
-func TestRegistry_startEnabled_registerError(t *testing.T) {
-	r := newRegistry()
-	want := errors.New("register failed")
-	m := &fakeModule{name: "bad", registerErr: want}
+	m := &mockModule{name: "bad", registerErr: errors.New("boom")}
 	r.add(m)
 
 	err := r.startEnabled(nil, []string{"bad"})
 	if err == nil {
 		t.Fatal("expected error from Register")
 	}
-	if !errors.Is(err, want) {
-		t.Errorf("error = %v, want to wrap %v", err, want)
+	if r.active["bad"] {
+		t.Error("module must not be marked active when Register returns an error")
 	}
 }
 
-func TestRegistry_stopAll_collecstAllErrors(t *testing.T) {
+func TestRegistry_StartEnabled_Success(t *testing.T) {
+	r := newRegistry()
+	m := &mockModule{name: "ok"}
+	r.add(m)
+
+	if err := r.startEnabled(nil, []string{"ok"}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !m.registered {
+		t.Error("expected Register to be called")
+	}
+	if !r.active["ok"] {
+		t.Error("expected module to be marked active")
+	}
+}
+
+func TestRegistry_StartEnabled_EmptyList(t *testing.T) {
+	r := newRegistry()
+	r.add(&mockModule{name: "unused"})
+
+	if err := r.startEnabled(nil, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// --- stopAll ---
+
+func TestRegistry_StopAll_OnlyStopsActive(t *testing.T) {
+	r := newRegistry()
+	active := &mockModule{name: "active"}
+	inactive := &mockModule{name: "inactive"}
+	r.add(active)
+	r.add(inactive)
+	_ = r.startEnabled(nil, []string{"active"})
+
+	if err := r.stopAll(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !active.unregistered {
+		t.Error("active module should have been unregistered")
+	}
+	if inactive.unregistered {
+		t.Error("inactive module must not be unregistered")
+	}
+}
+
+func TestRegistry_StopAll_CollectsAllErrors(t *testing.T) {
 	r := newRegistry()
 	errA := errors.New("err-a")
 	errB := errors.New("err-b")
-	a := &fakeModule{name: "a", unregisterErr: errA}
-	b := &fakeModule{name: "b", unregisterErr: errB}
-	r.add(a)
-	r.add(b)
+	r.add(&mockModule{name: "a", unregErr: errA})
+	r.add(&mockModule{name: "b", unregErr: errB})
 	r.active["a"] = true
 	r.active["b"] = true
 
@@ -90,16 +119,30 @@ func TestRegistry_stopAll_collecstAllErrors(t *testing.T) {
 	}
 }
 
-func TestRegistry_stopAll_skipsInactive(t *testing.T) {
+func TestRegistry_StopAll_MarksInactive(t *testing.T) {
 	r := newRegistry()
-	m := &fakeModule{name: "idle"}
+	m := &mockModule{name: "m"}
 	r.add(m)
-	// never activated
+	_ = r.startEnabled(nil, []string{"m"})
+	_ = r.stopAll()
 
-	if err := r.stopAll(); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if r.active["m"] {
+		t.Error("module should be marked inactive after stopAll")
 	}
-	if m.unregistered {
-		t.Error("Unregister called on inactive module")
+}
+
+func TestRegistry_Add_OverwritesSameName(t *testing.T) {
+	r := newRegistry()
+	first := &mockModule{name: "dup"}
+	second := &mockModule{name: "dup"}
+	r.add(first)
+	r.add(second)
+
+	_ = r.startEnabled(nil, []string{"dup"})
+	if !second.registered {
+		t.Error("second registration should win")
+	}
+	if first.registered {
+		t.Error("first registration should have been overwritten")
 	}
 }
