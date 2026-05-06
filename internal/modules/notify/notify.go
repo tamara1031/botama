@@ -21,11 +21,16 @@ type postBody struct {
 	Content string `json:"content"`
 }
 
+// messageSender is the subset of discordgo.Session used by this module.
+type messageSender interface {
+	ChannelMessageSend(channelID, content string, options ...discordgo.RequestOption) (*discordgo.Message, error)
+}
+
 type Notify struct {
 	token            string
 	defaultChannelID string
 	server           *http.Server
-	session          *discordgo.Session
+	sender           messageSender
 }
 
 func New(token, defaultChannelID, addr string) *Notify {
@@ -61,7 +66,7 @@ func (n *Notify) Register(s *discordgo.Session) error {
 	if n.token == "" {
 		return fmt.Errorf("notify: API_TOKEN is required")
 	}
-	n.session = s
+	n.sender = s
 
 	ln, err := net.Listen("tcp", n.server.Addr)
 	if err != nil {
@@ -111,7 +116,7 @@ func (n *Notify) send(w http.ResponseWriter, r *http.Request, channelID string) 
 		return
 	}
 
-	if _, err := n.session.ChannelMessageSend(channelID, body.Content); err != nil {
+	if _, err := n.sender.ChannelMessageSend(channelID, body.Content); err != nil {
 		var restErr *discordgo.RESTError
 		if errors.As(err, &restErr) && restErr.Response.StatusCode == http.StatusNotFound {
 			slog.Warn("notify: channel not found", "channel", channelID)
