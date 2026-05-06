@@ -26,11 +26,11 @@ func TestLoad_Defaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Token != "tok" {
-		t.Errorf("Token: want tok, got %q", cfg.Token)
+	if cfg.Discord.Token != "tok" {
+		t.Errorf("Discord.Token: want tok, got %q", cfg.Discord.Token)
 	}
-	if cfg.APIAddr != ":8080" {
-		t.Errorf("APIAddr: want :8080, got %q", cfg.APIAddr)
+	if cfg.Notify.APIAddr != ":8080" {
+		t.Errorf("Notify.APIAddr: want :8080, got %q", cfg.Notify.APIAddr)
 	}
 	if len(cfg.EnabledModules) != 0 {
 		t.Errorf("EnabledModules: want empty, got %v", cfg.EnabledModules)
@@ -64,8 +64,8 @@ func TestLoad_CustomAPIAddr(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.APIAddr != ":9090" {
-		t.Errorf("APIAddr: want :9090, got %q", cfg.APIAddr)
+	if cfg.Notify.APIAddr != ":9090" {
+		t.Errorf("Notify.APIAddr: want :9090, got %q", cfg.Notify.APIAddr)
 	}
 }
 
@@ -83,28 +83,27 @@ func TestLoad_AllFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	checks := map[string]string{
-		"Token":                   cfg.Token,
-		"GuildID":                 cfg.GuildID,
-		"APIToken":                cfg.APIToken,
-		"APIAddr":                 cfg.APIAddr,
-		"NotifyInfoChannelID":     cfg.NotifyInfoChannelID,
-		"NotifyWarningChannelID":  cfg.NotifyWarningChannelID,
-		"NotifyCriticalChannelID": cfg.NotifyCriticalChannelID,
+
+	if cfg.Discord.Token != "discord-tok" {
+		t.Errorf("Discord.Token: want discord-tok, got %q", cfg.Discord.Token)
 	}
-	want := map[string]string{
-		"Token":                   "discord-tok",
-		"GuildID":                 "guild-1",
-		"APIToken":                "api-tok",
-		"APIAddr":                 ":7777",
-		"NotifyInfoChannelID":     "ch-info",
-		"NotifyWarningChannelID":  "ch-warn",
-		"NotifyCriticalChannelID": "ch-crit",
+	if cfg.Discord.GuildID != "guild-1" {
+		t.Errorf("Discord.GuildID: want guild-1, got %q", cfg.Discord.GuildID)
 	}
-	for field, got := range checks {
-		if got != want[field] {
-			t.Errorf("%s: want %q, got %q", field, want[field], got)
-		}
+	if cfg.Notify.APIToken != "api-tok" {
+		t.Errorf("Notify.APIToken: want api-tok, got %q", cfg.Notify.APIToken)
+	}
+	if cfg.Notify.APIAddr != ":7777" {
+		t.Errorf("Notify.APIAddr: want :7777, got %q", cfg.Notify.APIAddr)
+	}
+	if cfg.Notify.InfoChannel != "ch-info" {
+		t.Errorf("Notify.InfoChannel: want ch-info, got %q", cfg.Notify.InfoChannel)
+	}
+	if cfg.Notify.WarningChannel != "ch-warn" {
+		t.Errorf("Notify.WarningChannel: want ch-warn, got %q", cfg.Notify.WarningChannel)
+	}
+	if cfg.Notify.CriticalChannel != "ch-crit" {
+		t.Errorf("Notify.CriticalChannel: want ch-crit, got %q", cfg.Notify.CriticalChannel)
 	}
 	if len(cfg.EnabledModules) != 2 {
 		t.Errorf("EnabledModules: want 2 entries, got %v", cfg.EnabledModules)

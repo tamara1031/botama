@@ -15,7 +15,7 @@ type Bot struct {
 }
 
 func New(cfg *config.Config) (*Bot, error) {
-	s, err := discordgo.New("Bot " + cfg.Token)
+	s, err := discordgo.New("Bot " + cfg.Discord.Token)
 	if err != nil {
 		return nil, fmt.Errorf("create session: %w", err)
 	}

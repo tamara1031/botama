@@ -6,15 +6,23 @@ import (
 	"strings"
 )
 
+type DiscordConfig struct {
+	Token   string
+	GuildID string
+}
+
+type NotifyConfig struct {
+	APIToken        string
+	APIAddr         string
+	InfoChannel     string
+	WarningChannel  string
+	CriticalChannel string
+}
+
 type Config struct {
-	Token                  string
-	GuildID                string
-	APIToken               string
-	APIAddr                string
-	NotifyInfoChannelID    string
-	NotifyWarningChannelID string
-	NotifyCriticalChannelID string
-	EnabledModules         []string
+	Discord        DiscordConfig
+	Notify         NotifyConfig
+	EnabledModules []string
 }
 
 func Load() (*Config, error) {
@@ -38,13 +46,17 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		Token:                   token,
-		GuildID:                 os.Getenv("GUILD_ID"),
-		APIToken:                os.Getenv("API_TOKEN"),
-		APIAddr:                 apiAddr,
-		NotifyInfoChannelID:     os.Getenv("NOTIFY_INFO_CHANNEL_ID"),
-		NotifyWarningChannelID:  os.Getenv("NOTIFY_WARNING_CHANNEL_ID"),
-		NotifyCriticalChannelID: os.Getenv("NOTIFY_CRITICAL_CHANNEL_ID"),
-		EnabledModules:          modules,
+		Discord: DiscordConfig{
+			Token:   token,
+			GuildID: os.Getenv("GUILD_ID"),
+		},
+		Notify: NotifyConfig{
+			APIToken:        os.Getenv("API_TOKEN"),
+			APIAddr:         apiAddr,
+			InfoChannel:     os.Getenv("NOTIFY_INFO_CHANNEL_ID"),
+			WarningChannel:  os.Getenv("NOTIFY_WARNING_CHANNEL_ID"),
+			CriticalChannel: os.Getenv("NOTIFY_CRITICAL_CHANNEL_ID"),
+		},
+		EnabledModules: modules,
 	}, nil
 }
