@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/bwmarrin/discordgo"
@@ -36,14 +37,14 @@ func (r *registry) startEnabled(s *discordgo.Session, names []string) error {
 	return nil
 }
 
-func (r *registry) stopAll() error {
+func (r *registry) stopAll(ctx context.Context) error {
 	var firstErr error
 	for name, m := range r.modules {
 		if !r.active[name] {
 			continue
 		}
-		if err := m.Unregister(); err != nil && firstErr == nil {
-			firstErr = fmt.Errorf("module %q unregister: %w", name, err)
+		if err := m.Shutdown(ctx); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("module %q shutdown: %w", name, err)
 		}
 		r.active[name] = false
 	}

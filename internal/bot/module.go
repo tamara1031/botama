@@ -1,6 +1,10 @@
 package bot
 
-import "github.com/bwmarrin/discordgo"
+import (
+	"context"
+
+	"github.com/bwmarrin/discordgo"
+)
 
 // Module is the interface all bot modules must implement.
 type Module interface {
@@ -8,6 +12,6 @@ type Module interface {
 	Name() string
 	// Register attaches event handlers to the Discord session.
 	Register(s *discordgo.Session) error
-	// Unregister removes all event handlers attached by this module.
-	Unregister() error
+	// Shutdown tears down the module, respecting ctx for any blocking cleanup.
+	Shutdown(ctx context.Context) error
 }

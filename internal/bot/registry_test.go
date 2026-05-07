@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -23,7 +24,7 @@ func (m *mockModule) Register(_ *discordgo.Session) error {
 	return m.registerErr
 }
 
-func (m *mockModule) Unregister() error {
+func (m *mockModule) Shutdown(_ context.Context) error {
 	m.unregistered = true
 	return m.unregErr
 }
@@ -87,7 +88,7 @@ func TestRegistry_StopAll_OnlyStopsActive(t *testing.T) {
 	r.add(inactive)
 	_ = r.startEnabled(nil, []string{"active"})
 
-	if err := r.stopAll(); err != nil {
+	if err := r.stopAll(context.Background()); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !active.unregistered {
@@ -104,7 +105,7 @@ func TestRegistry_StopAll_ReturnsFirstError(t *testing.T) {
 	r.add(m)
 	_ = r.startEnabled(nil, []string{"fail"})
 
-	err := r.stopAll()
+	err := r.stopAll(context.Background())
 	if err == nil {
 		t.Fatal("expected error from Unregister")
 	}
@@ -115,7 +116,7 @@ func TestRegistry_StopAll_MarksInactive(t *testing.T) {
 	m := &mockModule{name: "m"}
 	r.add(m)
 	_ = r.startEnabled(nil, []string{"m"})
-	_ = r.stopAll()
+	_ = r.stopAll(context.Background())
 
 	if r.active["m"] {
 		t.Error("module should be marked inactive after stopAll")

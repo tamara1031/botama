@@ -1,6 +1,7 @@
 package ping
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -71,7 +72,7 @@ func interactionUserID(i *discordgo.Interaction) string {
 	return ""
 }
 
-func (p *Ping) Unregister() error {
+func (p *Ping) Shutdown(_ context.Context) error {
 	if p.removeHandler != nil {
 		p.removeHandler()
 	}

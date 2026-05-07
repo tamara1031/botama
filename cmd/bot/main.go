@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -44,7 +45,7 @@ func main() {
 	<-stop
 
 	slog.Info("shutting down")
-	if err := b.Stop(); err != nil {
+	if err := b.Stop(context.Background()); err != nil {
 		slog.Error("shutdown", "error", err)
 		os.Exit(1)
 	}

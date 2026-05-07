@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 
@@ -54,8 +55,8 @@ func (b *Bot) Start() error {
 	return nil
 }
 
-func (b *Bot) Stop() error {
-	if err := b.registry.stopAll(); err != nil {
+func (b *Bot) Stop(ctx context.Context) error {
+	if err := b.registry.stopAll(ctx); err != nil {
 		slog.Warn("error stopping modules", "error", err)
 	}
 	return b.session.Close()
