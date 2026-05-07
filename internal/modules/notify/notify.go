@@ -49,6 +49,7 @@ func New(token string, channels Channels, addr string) *Notify {
 	mux.HandleFunc("POST /notify/info", n.handleInfo)
 	mux.HandleFunc("POST /notify/warning", n.handleWarning)
 	mux.HandleFunc("POST /notify/critical", n.handleCritical)
+	mux.HandleFunc("GET /healthz", n.healthz)
 	n.server = &http.Server{
 		Addr:              addr,
 		Handler:           mux,
@@ -87,6 +88,10 @@ func (n *Notify) Unregister() error {
 		return fmt.Errorf("notify: shutdown: %w", err)
 	}
 	return nil
+}
+
+func (n *Notify) healthz(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
 }
 
 func (n *Notify) handleInfo(w http.ResponseWriter, r *http.Request) {

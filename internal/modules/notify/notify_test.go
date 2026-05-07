@@ -44,6 +44,18 @@ func newNotify(token string, channels Channels, sender Sender) *Notify {
 	}
 }
 
+// --- healthz ---
+
+func TestHealthz(t *testing.T) {
+	n := &Notify{}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	n.healthz(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+}
+
 // --- authorized ---
 
 func TestAuthorized(t *testing.T) {
