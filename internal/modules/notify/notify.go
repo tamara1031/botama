@@ -46,9 +46,10 @@ func New(token string, channels Channels, addr string) *Notify {
 		channels: channels,
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /notify/info", n.handleInfo)
-	mux.HandleFunc("POST /notify/warning", n.handleWarning)
-	mux.HandleFunc("POST /notify/critical", n.handleCritical)
+	auth := bearerAuth(token)
+	mux.Handle("POST /notify/info", auth(http.HandlerFunc(n.handleInfo)))
+	mux.Handle("POST /notify/warning", auth(http.HandlerFunc(n.handleWarning)))
+	mux.Handle("POST /notify/critical", auth(http.HandlerFunc(n.handleCritical)))
 	mux.HandleFunc("GET /healthz", n.healthz)
 	n.server = &http.Server{
 		Addr:              addr,
@@ -115,12 +116,6 @@ func (n *Notify) sendLevel(w http.ResponseWriter, r *http.Request, level, channe
 }
 
 func (n *Notify) send(w http.ResponseWriter, r *http.Request, level, channelID string) {
-	if !n.authorized(r) {
-		slog.Warn("notify: unauthorized", "remote", r.RemoteAddr)
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var body postBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -148,7 +143,17 @@ func (n *Notify) send(w http.ResponseWriter, r *http.Request, level, channelID s
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (n *Notify) authorized(r *http.Request) bool {
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	return subtle.ConstantTimeCompare([]byte(token), []byte(n.token)) == 1
+// bearerAuth returns middleware that enforces Bearer token authentication.
+func bearerAuth(token string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if subtle.ConstantTimeCompare([]byte(t), []byte(token)) != 1 {
+				slog.Warn("notify: unauthorized", "remote", r.RemoteAddr)
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
