@@ -44,6 +44,39 @@ func newNotify(token string, channels Channels, sender Sender) *Notify {
 	}
 }
 
+// --- handleHealth ---
+
+func TestHandleHealth_ReturnsOK(t *testing.T) {
+	n := newNotify("tok", Channels{}, nil)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/health", nil)
+
+	n.handleHealth(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type: want application/json, got %q", ct)
+	}
+	if body := w.Body.String(); body != `{"status":"ok"}` {
+		t.Errorf("body: want {\"status\":\"ok\"}, got %q", body)
+	}
+}
+
+func TestHandleHealth_NoAuthRequired(t *testing.T) {
+	n := newNotify("secret", Channels{}, nil)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/health", nil)
+	// Deliberately no Authorization header.
+
+	n.handleHealth(w, r)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("health must be accessible without a token; got %d", w.Code)
+	}
+}
+
 // --- authorized ---
 
 func TestAuthorized(t *testing.T) {

@@ -46,6 +46,7 @@ func New(token string, channels Channels, addr string) *Notify {
 		channels: channels,
 	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /health", n.handleHealth)
 	mux.HandleFunc("POST /notify/info", n.handleInfo)
 	mux.HandleFunc("POST /notify/warning", n.handleWarning)
 	mux.HandleFunc("POST /notify/critical", n.handleCritical)
@@ -87,6 +88,12 @@ func (n *Notify) Unregister() error {
 		return fmt.Errorf("notify: shutdown: %w", err)
 	}
 	return nil
+}
+
+func (n *Notify) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
 func (n *Notify) handleInfo(w http.ResponseWriter, r *http.Request) {
