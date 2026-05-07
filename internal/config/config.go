@@ -7,14 +7,16 @@ import (
 )
 
 type Config struct {
-	Token                  string
-	GuildID                string
-	APIToken               string
-	APIAddr                string
-	NotifyInfoChannelID    string
-	NotifyWarningChannelID string
+	Token                   string
+	GuildID                 string
+	APIToken                string
+	APIAddr                 string
+	NotifyInfoChannelID     string
+	NotifyWarningChannelID  string
 	NotifyCriticalChannelID string
-	EnabledModules         []string
+	EnabledModules          []string
+	LogLevel                string
+	LogFormat               string
 }
 
 func Load() (*Config, error) {
@@ -37,6 +39,15 @@ func Load() (*Config, error) {
 		apiAddr = ":8080"
 	}
 
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+	logFormat := os.Getenv("LOG_FORMAT")
+	if logFormat == "" {
+		logFormat = "json"
+	}
+
 	return &Config{
 		Token:                   token,
 		GuildID:                 os.Getenv("GUILD_ID"),
@@ -46,5 +57,7 @@ func Load() (*Config, error) {
 		NotifyWarningChannelID:  os.Getenv("NOTIFY_WARNING_CHANNEL_ID"),
 		NotifyCriticalChannelID: os.Getenv("NOTIFY_CRITICAL_CHANNEL_ID"),
 		EnabledModules:          modules,
+		LogLevel:                logLevel,
+		LogFormat:               logFormat,
 	}, nil
 }
