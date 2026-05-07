@@ -59,11 +59,19 @@ func New(token string, channels Channels, addr string) *Notify {
 	return n
 }
 
+func channelsConfigured(c Channels) bool {
+	return c.Info != "" || c.Warning != "" || c.Critical != ""
+}
+
 func (n *Notify) Name() string { return "notify" }
 
 func (n *Notify) Register(s *discordgo.Session) error {
 	if n.token == "" {
 		return fmt.Errorf("notify: API_TOKEN is required")
+	}
+
+	if !channelsConfigured(n.channels) {
+		slog.Warn("notify: no notification channels configured; all /notify/* requests will return 404")
 	}
 
 	n.sender = s

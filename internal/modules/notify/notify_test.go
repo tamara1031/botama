@@ -44,6 +44,29 @@ func newNotify(token string, channels Channels, sender Sender) *Notify {
 	}
 }
 
+// --- channelsConfigured ---
+
+func TestChannelsConfigured(t *testing.T) {
+	cases := []struct {
+		name string
+		ch   Channels
+		want bool
+	}{
+		{"all empty", Channels{}, false},
+		{"only info", Channels{Info: "ch"}, true},
+		{"only warning", Channels{Warning: "ch"}, true},
+		{"only critical", Channels{Critical: "ch"}, true},
+		{"all set", Channels{Info: "a", Warning: "b", Critical: "c"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := channelsConfigured(tc.ch); got != tc.want {
+				t.Errorf("channelsConfigured(%+v) = %v, want %v", tc.ch, got, tc.want)
+			}
+		})
+	}
+}
+
 // --- handleHealth ---
 
 func TestHandleHealth_ReturnsOK(t *testing.T) {
