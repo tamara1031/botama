@@ -27,11 +27,9 @@ type postBody struct {
 	Content string `json:"content"`
 }
 
-type Channels struct {
-	Info     string
-	Warning  string
-	Critical string
-}
+// Channels maps notification level names (e.g. "info", "warning") to Discord channel IDs.
+// Adding a new level requires no code change — only a new map entry.
+type Channels map[string]string
 
 type Notify struct {
 	token    string
@@ -46,9 +44,9 @@ func New(token string, channels Channels, addr string) *Notify {
 		channels: channels,
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /notify/info", n.handleInfo)
-	mux.HandleFunc("POST /notify/warning", n.handleWarning)
-	mux.HandleFunc("POST /notify/critical", n.handleCritical)
+	for level, channelID := range channels {
+		mux.HandleFunc("POST /notify/"+level, n.levelHandler(level, channelID))
+	}
 	n.server = &http.Server{
 		Addr:              addr,
 		Handler:           mux,
@@ -56,6 +54,13 @@ func New(token string, channels Channels, addr string) *Notify {
 		WriteTimeout:      10 * time.Second,
 	}
 	return n
+}
+
+// levelHandler returns an http.HandlerFunc bound to a specific level and channel.
+func (n *Notify) levelHandler(level, channelID string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		n.sendLevel(w, r, level, channelID)
+	}
 }
 
 func (n *Notify) Name() string { return "notify" }
@@ -87,18 +92,6 @@ func (n *Notify) Unregister() error {
 		return fmt.Errorf("notify: shutdown: %w", err)
 	}
 	return nil
-}
-
-func (n *Notify) handleInfo(w http.ResponseWriter, r *http.Request) {
-	n.sendLevel(w, r, "info", n.channels.Info)
-}
-
-func (n *Notify) handleWarning(w http.ResponseWriter, r *http.Request) {
-	n.sendLevel(w, r, "warning", n.channels.Warning)
-}
-
-func (n *Notify) handleCritical(w http.ResponseWriter, r *http.Request) {
-	n.sendLevel(w, r, "critical", n.channels.Critical)
 }
 
 func (n *Notify) sendLevel(w http.ResponseWriter, r *http.Request, level, channelID string) {

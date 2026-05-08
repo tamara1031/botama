@@ -73,7 +73,7 @@ func TestAuthorized(t *testing.T) {
 	})
 }
 
-// --- handleInfo / handleWarning / handleCritical ---
+// --- sendLevel / levelHandler ---
 
 func TestHandleInfo_NoChannel(t *testing.T) {
 	n := newNotify("tok", Channels{}, nil)
@@ -81,7 +81,7 @@ func TestHandleInfo_NoChannel(t *testing.T) {
 	r := httptest.NewRequest(http.MethodPost, "/notify/info", nil)
 	r.Header.Set("Authorization", "Bearer tok")
 
-	n.handleInfo(w, r)
+	n.sendLevel(w, r, "info", n.channels["info"])
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("want 404, got %d", w.Code)
@@ -90,12 +90,12 @@ func TestHandleInfo_NoChannel(t *testing.T) {
 
 func TestHandleInfo_SendsToInfoChannel(t *testing.T) {
 	mock := &mockSender{}
-	n := newNotify("tok", Channels{Info: "chan-info"}, mock)
+	n := newNotify("tok", Channels{"info": "chan-info"}, mock)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/notify/info", bytes.NewBufferString(`{"content":"hello"}`))
 	r.Header.Set("Authorization", "Bearer tok")
 
-	n.handleInfo(w, r)
+	n.sendLevel(w, r, "info", n.channels["info"])
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("want 204, got %d: %s", w.Code, w.Body)
@@ -110,10 +110,10 @@ func TestHandleInfo_SendsToInfoChannel(t *testing.T) {
 
 func TestHandleWarning_SendsToWarningChannel(t *testing.T) {
 	mock := &mockSender{}
-	n := newNotify("tok", Channels{Warning: "chan-warn"}, mock)
+	n := newNotify("tok", Channels{"warning": "chan-warn"}, mock)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /notify/warning", n.handleWarning)
+	mux.HandleFunc("POST /notify/warning", n.levelHandler("warning", n.channels["warning"]))
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -136,12 +136,12 @@ func TestHandleWarning_SendsToWarningChannel(t *testing.T) {
 
 func TestHandleCritical_SendsToCriticalChannel(t *testing.T) {
 	mock := &mockSender{}
-	n := newNotify("tok", Channels{Critical: "chan-crit"}, mock)
+	n := newNotify("tok", Channels{"critical": "chan-crit"}, mock)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/notify/critical", bytes.NewBufferString(`{"content":"down"}`))
 	r.Header.Set("Authorization", "Bearer tok")
 
-	n.handleCritical(w, r)
+	n.sendLevel(w, r, "critical", n.channels["critical"])
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("want 204, got %d: %s", w.Code, w.Body)
