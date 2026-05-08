@@ -80,9 +80,7 @@ func (n *Notify) Register(s *discordgo.Session) error {
 	return nil
 }
 
-func (n *Notify) Unregister() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+func (n *Notify) Shutdown(ctx context.Context) error {
 	if err := n.server.Shutdown(ctx); err != nil {
 		return fmt.Errorf("notify: shutdown: %w", err)
 	}

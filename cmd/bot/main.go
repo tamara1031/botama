@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/tamara1031/botama/internal/bot"
 	"github.com/tamara1031/botama/internal/config"
@@ -44,7 +46,9 @@ func main() {
 	<-stop
 
 	slog.Info("shutting down")
-	if err := b.Stop(); err != nil {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := b.Stop(shutdownCtx); err != nil {
 		slog.Error("shutdown", "error", err)
 		os.Exit(1)
 	}
