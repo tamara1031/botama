@@ -44,6 +44,29 @@ func newNotify(token string, channels Channels, sender Sender) *Notify {
 	}
 }
 
+// --- channelsConfigured ---
+
+func TestChannelsConfigured(t *testing.T) {
+	cases := []struct {
+		name string
+		ch   Channels
+		want bool
+	}{
+		{"all empty", Channels{}, false},
+		{"only info", Channels{Info: "ch"}, true},
+		{"only warning", Channels{Warning: "ch"}, true},
+		{"only critical", Channels{Critical: "ch"}, true},
+		{"all set", Channels{Info: "a", Warning: "b", Critical: "c"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := channelsConfigured(tc.ch); got != tc.want {
+				t.Errorf("channelsConfigured(%+v) = %v, want %v", tc.ch, got, tc.want)
+			}
+		})
+	}
+}
+
 // --- healthz ---
 
 func TestHealthz(t *testing.T) {
@@ -53,6 +76,19 @@ func TestHealthz(t *testing.T) {
 	n.healthz(w, r)
 	if w.Code != http.StatusOK {
 		t.Fatalf("want 200, got %d", w.Code)
+	}
+}
+
+func TestHealthz_JSONBody(t *testing.T) {
+	n := &Notify{}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	n.healthz(w, r)
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type: want application/json, got %q", ct)
+	}
+	if body := w.Body.String(); body != `{"status":"ok"}` {
+		t.Errorf("body: want {\"status\":\"ok\"}, got %q", body)
 	}
 }
 
@@ -232,7 +268,7 @@ func TestSend_DiscordInternalError(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":"hi"}`))
 
-	n.send(w, r, "critical", "ch")
+	n.send(w, r, "info", "ch")
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("want 500, got %d", w.Code)
@@ -245,7 +281,7 @@ func TestSend_Success(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":"works!"}`))
 
-	n.send(w, r, "warning", "ch")
+	n.send(w, r, "info", "ch")
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("want 204, got %d", w.Code)

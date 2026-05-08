@@ -75,11 +75,19 @@ func bearerAuth(token string) func(http.Handler) http.Handler {
 	}
 }
 
+func channelsConfigured(c Channels) bool {
+	return c.Info != "" || c.Warning != "" || c.Critical != ""
+}
+
 func (n *Notify) Name() string { return "notify" }
 
 func (n *Notify) Register(s *discordgo.Session) error {
 	if n.token == "" {
 		return fmt.Errorf("notify: API_TOKEN is required")
+	}
+
+	if !channelsConfigured(n.channels) {
+		slog.Warn("notify: no notification channels configured; all /notify/* requests will return 404")
 	}
 
 	n.sender = s
@@ -105,7 +113,9 @@ func (n *Notify) Shutdown(ctx context.Context) error {
 }
 
 func (n *Notify) healthz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
 func (n *Notify) handleInfo(w http.ResponseWriter, r *http.Request) {

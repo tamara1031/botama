@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -14,12 +15,36 @@ import (
 	"github.com/tamara1031/botama/internal/modules/ping"
 )
 
+func initLogger(level, format string) {
+	var lvl slog.Level
+	switch strings.ToLower(level) {
+	case "debug":
+		lvl = slog.LevelDebug
+	case "warn", "warning":
+		lvl = slog.LevelWarn
+	case "error":
+		lvl = slog.LevelError
+	default:
+		lvl = slog.LevelInfo
+	}
+	opts := &slog.HandlerOptions{Level: lvl}
+	var h slog.Handler
+	if strings.ToLower(format) == "text" {
+		h = slog.NewTextHandler(os.Stderr, opts)
+	} else {
+		h = slog.NewJSONHandler(os.Stderr, opts)
+	}
+	slog.SetDefault(slog.New(h))
+}
+
 func main() {
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("config", "error", err)
 		os.Exit(1)
 	}
+
+	initLogger(cfg.LogLevel, cfg.LogFormat)
 
 	b, err := bot.New(cfg)
 	if err != nil {

@@ -23,6 +23,8 @@ type Config struct {
 	Discord        DiscordConfig
 	Notify         NotifyConfig
 	EnabledModules []string
+	LogLevel       string
+	LogFormat      string
 }
 
 func Load() (*Config, error) {
@@ -47,6 +49,15 @@ func Load() (*Config, error) {
 		apiAddr = ":8080"
 	}
 
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+	logFormat := os.Getenv("LOG_FORMAT")
+	if logFormat == "" {
+		logFormat = "json"
+	}
+
 	cfg := &Config{
 		Discord: DiscordConfig{
 			Token:   token,
@@ -60,6 +71,8 @@ func Load() (*Config, error) {
 			CriticalChannel: os.Getenv("NOTIFY_CRITICAL_CHANNEL_ID"),
 		},
 		EnabledModules: modules,
+		LogLevel:       logLevel,
+		LogFormat:      logFormat,
 	}
 
 	if err := cfg.validate(); err != nil {

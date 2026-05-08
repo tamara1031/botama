@@ -21,6 +21,8 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("NOTIFY_INFO_CHANNEL_ID", "")
 	t.Setenv("NOTIFY_WARNING_CHANNEL_ID", "")
 	t.Setenv("NOTIFY_CRITICAL_CHANNEL_ID", "")
+	t.Setenv("LOG_LEVEL", "")
+	t.Setenv("LOG_FORMAT", "")
 
 	cfg, err := Load()
 	if err != nil {
@@ -34,6 +36,29 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if len(cfg.EnabledModules) != 0 {
 		t.Errorf("EnabledModules: want empty, got %v", cfg.EnabledModules)
+	}
+	if cfg.LogLevel != "info" {
+		t.Errorf("LogLevel: want info, got %q", cfg.LogLevel)
+	}
+	if cfg.LogFormat != "json" {
+		t.Errorf("LogFormat: want json, got %q", cfg.LogFormat)
+	}
+}
+
+func TestLoad_LogLevelAndFormat(t *testing.T) {
+	t.Setenv("DISCORD_TOKEN", "tok")
+	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("LOG_FORMAT", "text")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.LogLevel != "debug" {
+		t.Errorf("LogLevel: want debug, got %q", cfg.LogLevel)
+	}
+	if cfg.LogFormat != "text" {
+		t.Errorf("LogFormat: want text, got %q", cfg.LogFormat)
 	}
 }
 
