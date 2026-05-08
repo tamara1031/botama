@@ -15,6 +15,40 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+// statusResponseWriter wraps http.ResponseWriter to capture the written status code.
+type statusResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusResponseWriter) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusResponseWriter) written() int {
+	if w.status == 0 {
+		return http.StatusOK
+	}
+	return w.status
+}
+
+// requestLogger logs method, path, status, and duration for each request.
+func requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		sw := &statusResponseWriter{ResponseWriter: w}
+		next.ServeHTTP(sw, r)
+		slog.Info("notify: request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", sw.written(),
+			"duration_ms", time.Since(start).Milliseconds(),
+			"remote", r.RemoteAddr,
+		)
+	})
+}
+
 const maxBodyBytes = 4 * 1024
 
 // Sender is the subset of discordgo.Session used to post messages.
@@ -53,7 +87,7 @@ func New(token string, channels Channels, addr string) *Notify {
 	mux.HandleFunc("GET /healthz", n.healthz)
 	n.server = &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           requestLogger(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      10 * time.Second,
 	}

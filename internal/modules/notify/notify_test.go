@@ -44,6 +44,55 @@ func newNotify(token string, channels Channels, sender Sender) *Notify {
 	}
 }
 
+// --- statusResponseWriter ---
+
+func TestStatusResponseWriter_DefaultOK(t *testing.T) {
+	sw := &statusResponseWriter{ResponseWriter: httptest.NewRecorder()}
+	if sw.written() != http.StatusOK {
+		t.Fatalf("want 200 by default, got %d", sw.written())
+	}
+}
+
+func TestStatusResponseWriter_CapturesWrittenCode(t *testing.T) {
+	w := httptest.NewRecorder()
+	sw := &statusResponseWriter{ResponseWriter: w}
+	sw.WriteHeader(http.StatusCreated)
+	if sw.written() != http.StatusCreated {
+		t.Fatalf("want 201, got %d", sw.written())
+	}
+	if w.Code != http.StatusCreated {
+		t.Fatalf("underlying recorder want 201, got %d", w.Code)
+	}
+}
+
+// --- requestLogger ---
+
+func TestRequestLogger_PassesStatusThrough(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
+	handler := requestLogger(inner)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	handler.ServeHTTP(w, r)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("want 202, got %d", w.Code)
+	}
+}
+
+func TestRequestLogger_DefaultStatusOK(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	})
+	handler := requestLogger(inner)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	handler.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+}
+
 // --- channelsConfigured ---
 
 func TestChannelsConfigured(t *testing.T) {
