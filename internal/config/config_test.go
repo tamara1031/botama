@@ -47,7 +47,8 @@ func TestLoad_ModulesParsed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := []string{"ping", "notify", "ping"}
+	// duplicate "ping" must be removed; order of first occurrence is preserved
+	want := []string{"ping", "notify"}
 	if len(cfg.EnabledModules) != len(want) {
 		t.Fatalf("EnabledModules: want %v, got %v", want, cfg.EnabledModules)
 	}

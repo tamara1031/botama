@@ -120,6 +120,25 @@ func TestRegistry_StopAll_CollectsAllErrors(t *testing.T) {
 	}
 }
 
+func TestRegistry_StopAll_UnregistersAllActive(t *testing.T) {
+	r := newRegistry()
+	first := &mockModule{name: "first"}
+	second := &mockModule{name: "second"}
+	third := &mockModule{name: "third"}
+
+	r.add(first)
+	r.add(second)
+	r.add(third)
+	_ = r.startEnabled(nil, []string{"first", "second", "third"})
+
+	if err := r.stopAll(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !first.unregistered || !second.unregistered || !third.unregistered {
+		t.Error("all active modules should have been unregistered")
+	}
+}
+
 func TestRegistry_StopAll_MarksInactive(t *testing.T) {
 	r := newRegistry()
 	m := &mockModule{name: "m"}
@@ -129,6 +148,19 @@ func TestRegistry_StopAll_MarksInactive(t *testing.T) {
 
 	if r.active["m"] {
 		t.Error("module should be marked inactive after stopAll")
+	}
+}
+
+func TestRegistry_StartEnabled_AlreadyRunning(t *testing.T) {
+	r := newRegistry()
+	m := &mockModule{name: "dup"}
+	r.add(m)
+	if err := r.startEnabled(nil, []string{"dup"}); err != nil {
+		t.Fatalf("first start: unexpected error: %v", err)
+	}
+	err := r.startEnabled(nil, []string{"dup"})
+	if err == nil {
+		t.Fatal("expected error when starting an already-running module")
 	}
 }
 

@@ -32,9 +32,11 @@ func Load() (*Config, error) {
 	}
 
 	var modules []string
+	seen := make(map[string]bool)
 	if raw := os.Getenv("MODULES_ENABLED"); raw != "" {
 		for _, m := range strings.Split(raw, ",") {
-			if m = strings.TrimSpace(m); m != "" {
+			if m = strings.TrimSpace(m); m != "" && !seen[m] {
+				seen[m] = true
 				modules = append(modules, m)
 			}
 		}
