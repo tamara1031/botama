@@ -65,17 +65,17 @@ type Notify struct {
 	sender   Sender
 }
 
-func New(token string, channels Channels, addr string) *Notify {
+func New(cfg Config) *Notify {
 	n := &Notify{
-		token:    token,
-		channels: channels,
+		token:    cfg.Token,
+		channels: cfg.Channels,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /notify/info", n.handleInfo)
 	mux.HandleFunc("POST /notify/warning", n.handleWarning)
 	mux.HandleFunc("POST /notify/critical", n.handleCritical)
 	n.server = &http.Server{
-		Addr:              addr,
+		Addr:              cfg.Addr,
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      10 * time.Second,
