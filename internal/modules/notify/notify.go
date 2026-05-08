@@ -2,10 +2,13 @@ package notify
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -14,6 +17,31 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 )
+
+type contextKey string
+
+const requestIDKey contextKey = "request_id"
+
+// newRequestID generates a cryptographically random 16-char hex request ID.
+func newRequestID() string {
+	b := make([]byte, 8)
+	_, _ = io.ReadFull(rand.Reader, b)
+	return hex.EncodeToString(b)
+}
+
+// requestIDMiddleware reads X-Request-ID from the incoming request or generates
+// a new one, stores it in the request context, and echoes it on the response.
+func requestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.Header.Get("X-Request-ID")
+		if id == "" {
+			id = newRequestID()
+		}
+		w.Header().Set("X-Request-ID", id)
+		ctx := context.WithValue(r.Context(), requestIDKey, id)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
 
 // statusResponseWriter wraps http.ResponseWriter to capture the written status code.
 type statusResponseWriter struct {
@@ -33,13 +61,16 @@ func (w *statusResponseWriter) written() int {
 	return w.status
 }
 
-// requestLogger logs method, path, status, and duration for each request.
+// requestLogger logs method, path, status, duration, and request_id for each request.
+// It reads request_id from the context set by requestIDMiddleware.
 func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		sw := &statusResponseWriter{ResponseWriter: w}
 		next.ServeHTTP(sw, r)
+		id, _ := r.Context().Value(requestIDKey).(string)
 		slog.Info("notify: request",
+			"request_id", id,
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", sw.written(),
@@ -87,7 +118,7 @@ func New(token string, channels Channels, addr string) *Notify {
 	mux.HandleFunc("GET /healthz", n.healthz)
 	n.server = &http.Server{
 		Addr:              addr,
-		Handler:           requestLogger(mux),
+		Handler:           requestIDMiddleware(requestLogger(mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      10 * time.Second,
 	}
