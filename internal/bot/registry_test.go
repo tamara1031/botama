@@ -10,8 +10,8 @@ import (
 
 // mockModule is a Module that records calls and returns configurable errors.
 type mockModule struct {
-	name        string
-	registered  bool
+	name         string
+	registered   bool
 	unregistered bool
 	registerErr  error
 	unregErr     error
@@ -99,15 +99,24 @@ func TestRegistry_StopAll_OnlyStopsActive(t *testing.T) {
 	}
 }
 
-func TestRegistry_StopAll_ReturnsFirstError(t *testing.T) {
+func TestRegistry_StopAll_CollectsAllErrors(t *testing.T) {
 	r := newRegistry()
-	m := &mockModule{name: "fail", unregErr: errors.New("unregister failed")}
-	r.add(m)
-	_ = r.startEnabled(nil, []string{"fail"})
+	errA := errors.New("err-a")
+	errB := errors.New("err-b")
+	r.add(&mockModule{name: "a", unregErr: errA})
+	r.add(&mockModule{name: "b", unregErr: errB})
+	r.active["a"] = true
+	r.active["b"] = true
 
 	err := r.stopAll(context.Background())
 	if err == nil {
-		t.Fatal("expected error from Unregister")
+		t.Fatal("expected combined error from stopAll")
+	}
+	if !errors.Is(err, errA) {
+		t.Errorf("combined error does not wrap errA: %v", err)
+	}
+	if !errors.Is(err, errB) {
+		t.Errorf("combined error does not wrap errB: %v", err)
 	}
 }
 

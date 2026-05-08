@@ -60,6 +60,21 @@ func New(token string, channels Channels, addr string) *Notify {
 	return n
 }
 
+// bearerAuth returns middleware that enforces Bearer token authentication.
+func bearerAuth(token string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if subtle.ConstantTimeCompare([]byte(t), []byte(token)) != 1 {
+				slog.Warn("notify: unauthorized", "remote", r.RemoteAddr)
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 func (n *Notify) Name() string { return "notify" }
 
 func (n *Notify) Register(s *discordgo.Session) error {
@@ -139,19 +154,4 @@ func (n *Notify) send(w http.ResponseWriter, r *http.Request, level, channelID s
 
 	slog.Info("notify: sent", "level", level, "channel", channelID, "remote", r.RemoteAddr)
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// bearerAuth returns middleware that enforces Bearer token authentication.
-func bearerAuth(token string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			t := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-			if subtle.ConstantTimeCompare([]byte(t), []byte(token)) != 1 {
-				slog.Warn("notify: unauthorized", "remote", r.RemoteAddr)
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-	}
 }

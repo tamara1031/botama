@@ -27,8 +27,7 @@ func (m *mockSender) ChannelMessageSend(channelID, content string, _ ...discordg
 	return &discordgo.Message{ID: "fake-id"}, nil
 }
 
-// restError builds a *discordgo.RESTError with the given HTTP status code so
-// tests can exercise the "channel not found" path without a live connection.
+// restError builds a *discordgo.RESTError with the given HTTP status code.
 func restError(status int) *discordgo.RESTError {
 	return &discordgo.RESTError{
 		Response: &http.Response{StatusCode: status},
@@ -36,6 +35,7 @@ func restError(status int) *discordgo.RESTError {
 	}
 }
 
+// newNotify constructs a Notify with a fake sender, skipping the TCP listener.
 func newNotify(token string, channels Channels, sender Sender) *Notify {
 	return &Notify{
 		token:    token,
@@ -94,7 +94,7 @@ func TestBearerAuth(t *testing.T) {
 	})
 }
 
-// --- handleInfo / handleWarning / handleCritical ---
+// --- handleInfo ---
 
 func TestHandleInfo_NoChannel(t *testing.T) {
 	n := newNotify("tok", Channels{}, nil)
@@ -127,6 +127,8 @@ func TestHandleInfo_SendsToInfoChannel(t *testing.T) {
 	}
 }
 
+// --- handleWarning ---
+
 func TestHandleWarning_SendsToWarningChannel(t *testing.T) {
 	mock := &mockSender{}
 	n := newNotify("tok", Channels{Warning: "chan-warn"}, mock)
@@ -152,6 +154,8 @@ func TestHandleWarning_SendsToWarningChannel(t *testing.T) {
 		t.Fatalf("want sentTo=chan-warn, got %q", mock.sentTo)
 	}
 }
+
+// --- handleCritical ---
 
 func TestHandleCritical_SendsToCriticalChannel(t *testing.T) {
 	mock := &mockSender{}
@@ -228,7 +232,7 @@ func TestSend_DiscordInternalError(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":"hi"}`))
 
-	n.send(w, r, "info", "ch")
+	n.send(w, r, "critical", "ch")
 
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("want 500, got %d", w.Code)
@@ -241,7 +245,7 @@ func TestSend_Success(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":"works!"}`))
 
-	n.send(w, r, "info", "ch")
+	n.send(w, r, "warning", "ch")
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("want 204, got %d", w.Code)
