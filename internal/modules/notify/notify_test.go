@@ -253,3 +253,51 @@ func TestSend_Success(t *testing.T) {
 		t.Fatalf("want sentContent=works!, got %q", mock.sentContent)
 	}
 }
+
+// --- LoadConfig ---
+
+func TestLoadConfig_Defaults(t *testing.T) {
+	t.Setenv("API_TOKEN", "")
+	t.Setenv("API_ADDR", "")
+	t.Setenv("NOTIFY_INFO_CHANNEL_ID", "")
+	t.Setenv("NOTIFY_WARNING_CHANNEL_ID", "")
+	t.Setenv("NOTIFY_CRITICAL_CHANNEL_ID", "")
+
+	cfg := LoadConfig()
+
+	if cfg.Addr != ":8080" {
+		t.Errorf("Addr: want :8080, got %q", cfg.Addr)
+	}
+	if cfg.Token != "" {
+		t.Errorf("Token: want empty, got %q", cfg.Token)
+	}
+	if cfg.Channels != (Channels{}) {
+		t.Errorf("Channels: want zero value, got %+v", cfg.Channels)
+	}
+}
+
+func TestLoadConfig_AllFields(t *testing.T) {
+	t.Setenv("API_TOKEN", "tok")
+	t.Setenv("API_ADDR", ":9090")
+	t.Setenv("NOTIFY_INFO_CHANNEL_ID", "ch-info")
+	t.Setenv("NOTIFY_WARNING_CHANNEL_ID", "ch-warn")
+	t.Setenv("NOTIFY_CRITICAL_CHANNEL_ID", "ch-crit")
+
+	cfg := LoadConfig()
+
+	if cfg.Token != "tok" {
+		t.Errorf("Token: want tok, got %q", cfg.Token)
+	}
+	if cfg.Addr != ":9090" {
+		t.Errorf("Addr: want :9090, got %q", cfg.Addr)
+	}
+	if cfg.Channels.Info != "ch-info" {
+		t.Errorf("Channels.Info: want ch-info, got %q", cfg.Channels.Info)
+	}
+	if cfg.Channels.Warning != "ch-warn" {
+		t.Errorf("Channels.Warning: want ch-warn, got %q", cfg.Channels.Warning)
+	}
+	if cfg.Channels.Critical != "ch-crit" {
+		t.Errorf("Channels.Critical: want ch-crit, got %q", cfg.Channels.Critical)
+	}
+}

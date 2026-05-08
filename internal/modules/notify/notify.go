@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -31,6 +32,30 @@ type Channels struct {
 	Info     string
 	Warning  string
 	Critical string
+}
+
+// Config holds the runtime configuration for the notify module.
+type Config struct {
+	Token    string
+	Addr     string
+	Channels Channels
+}
+
+// LoadConfig reads the notify module's configuration from environment variables.
+func LoadConfig() Config {
+	addr := os.Getenv("API_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	return Config{
+		Token: os.Getenv("API_TOKEN"),
+		Addr:  addr,
+		Channels: Channels{
+			Info:     os.Getenv("NOTIFY_INFO_CHANNEL_ID"),
+			Warning:  os.Getenv("NOTIFY_WARNING_CHANNEL_ID"),
+			Critical: os.Getenv("NOTIFY_CRITICAL_CHANNEL_ID"),
+		},
+	}
 }
 
 type Notify struct {
