@@ -44,31 +44,52 @@ func newNotify(token string, channels Channels, sender Sender) *Notify {
 	}
 }
 
-// --- authorized ---
+// --- healthz ---
 
-func TestAuthorized(t *testing.T) {
-	n := newNotify("secret", Channels{}, nil)
+func TestHealthz(t *testing.T) {
+	n := &Notify{}
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	n.healthz(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+}
+
+// --- bearerAuth middleware ---
+
+func TestBearerAuth(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := bearerAuth("secret")(inner)
 
 	t.Run("valid bearer token", func(t *testing.T) {
+		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodPost, "/", nil)
 		r.Header.Set("Authorization", "Bearer secret")
-		if !n.authorized(r) {
-			t.Fatal("expected authorized")
+		handler.ServeHTTP(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("want 200, got %d", w.Code)
 		}
 	})
 
 	t.Run("wrong token", func(t *testing.T) {
+		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodPost, "/", nil)
 		r.Header.Set("Authorization", "Bearer wrong")
-		if n.authorized(r) {
-			t.Fatal("expected unauthorized")
+		handler.ServeHTTP(w, r)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("want 401, got %d", w.Code)
 		}
 	})
 
 	t.Run("missing header", func(t *testing.T) {
+		w := httptest.NewRecorder()
 		r := httptest.NewRequest(http.MethodPost, "/", nil)
-		if n.authorized(r) {
-			t.Fatal("expected unauthorized")
+		handler.ServeHTTP(w, r)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("want 401, got %d", w.Code)
 		}
 	})
 }
@@ -79,7 +100,6 @@ func TestHandleInfo_NoChannel(t *testing.T) {
 	n := newNotify("tok", Channels{}, nil)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/notify/info", nil)
-	r.Header.Set("Authorization", "Bearer tok")
 
 	n.handleInfo(w, r)
 
@@ -93,7 +113,6 @@ func TestHandleInfo_SendsToInfoChannel(t *testing.T) {
 	n := newNotify("tok", Channels{Info: "chan-info"}, mock)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/notify/info", bytes.NewBufferString(`{"content":"hello"}`))
-	r.Header.Set("Authorization", "Bearer tok")
 
 	n.handleInfo(w, r)
 
@@ -113,7 +132,7 @@ func TestHandleWarning_SendsToWarningChannel(t *testing.T) {
 	n := newNotify("tok", Channels{Warning: "chan-warn"}, mock)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /notify/warning", n.handleWarning)
+	mux.Handle("POST /notify/warning", bearerAuth("tok")(http.HandlerFunc(n.handleWarning)))
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 
@@ -139,7 +158,6 @@ func TestHandleCritical_SendsToCriticalChannel(t *testing.T) {
 	n := newNotify("tok", Channels{Critical: "chan-crit"}, mock)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/notify/critical", bytes.NewBufferString(`{"content":"down"}`))
-	r.Header.Set("Authorization", "Bearer tok")
 
 	n.handleCritical(w, r)
 
@@ -151,28 +169,12 @@ func TestHandleCritical_SendsToCriticalChannel(t *testing.T) {
 	}
 }
 
-// --- send: auth ---
-
-func TestSend_Unauthorized(t *testing.T) {
-	n := newNotify("tok", Channels{}, nil)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPost, "/notify/info", bytes.NewBufferString(`{"content":"x"}`))
-	// No Authorization header
-
-	n.send(w, r, "info", "ch")
-
-	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("want 401, got %d", w.Code)
-	}
-}
-
 // --- send: body validation ---
 
 func TestSend_BadJSON(t *testing.T) {
 	n := newNotify("tok", Channels{}, &mockSender{})
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("not-json"))
-	r.Header.Set("Authorization", "Bearer tok")
 
 	n.send(w, r, "info", "ch")
 
@@ -185,7 +187,6 @@ func TestSend_EmptyContent(t *testing.T) {
 	n := newNotify("tok", Channels{}, &mockSender{})
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":""}`))
-	r.Header.Set("Authorization", "Bearer tok")
 
 	n.send(w, r, "info", "ch")
 
@@ -198,7 +199,6 @@ func TestSend_MissingContentField(t *testing.T) {
 	n := newNotify("tok", Channels{}, &mockSender{})
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{}`))
-	r.Header.Set("Authorization", "Bearer tok")
 
 	n.send(w, r, "info", "ch")
 
@@ -214,7 +214,6 @@ func TestSend_ChannelNotFound(t *testing.T) {
 	n := newNotify("tok", Channels{}, mock)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":"hi"}`))
-	r.Header.Set("Authorization", "Bearer tok")
 
 	n.send(w, r, "info", "unknown-ch")
 
@@ -228,7 +227,6 @@ func TestSend_DiscordInternalError(t *testing.T) {
 	n := newNotify("tok", Channels{}, mock)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":"hi"}`))
-	r.Header.Set("Authorization", "Bearer tok")
 
 	n.send(w, r, "info", "ch")
 
@@ -242,7 +240,6 @@ func TestSend_Success(t *testing.T) {
 	n := newNotify("tok", Channels{}, mock)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":"works!"}`))
-	r.Header.Set("Authorization", "Bearer tok")
 
 	n.send(w, r, "info", "ch")
 
