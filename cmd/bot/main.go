@@ -25,12 +25,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	b.RegisterModule(ping.New(cfg.GuildID))
-	b.RegisterModule(notify.New(cfg.APIToken, notify.Channels{
-		Info:     cfg.NotifyInfoChannelID,
-		Warning:  cfg.NotifyWarningChannelID,
-		Critical: cfg.NotifyCriticalChannelID,
-	}, cfg.APIAddr))
+	b.RegisterModule(ping.New(cfg.Discord.GuildID))
+	b.RegisterModule(notify.New(cfg.Notify.APIToken, notify.Channels{
+		Info:     cfg.Notify.InfoChannel,
+		Warning:  cfg.Notify.WarningChannel,
+		Critical: cfg.Notify.CriticalChannel,
+	}, cfg.Notify.APIAddr))
 
 	if err := b.Start(); err != nil {
 		slog.Error("start", "error", err)
