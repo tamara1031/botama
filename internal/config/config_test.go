@@ -35,6 +35,9 @@ func TestLoad_Defaults(t *testing.T) {
 	if len(cfg.EnabledModules) != 0 {
 		t.Errorf("EnabledModules: want empty, got %v", cfg.EnabledModules)
 	}
+	if len(cfg.NotifyChannels) != 0 {
+		t.Errorf("NotifyChannels: want empty, got %v", cfg.NotifyChannels)
+	}
 }
 
 func TestLoad_ModulesParsed(t *testing.T) {
@@ -83,30 +86,50 @@ func TestLoad_AllFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	checks := map[string]string{
-		"Token":                   cfg.Token,
-		"GuildID":                 cfg.GuildID,
-		"APIToken":                cfg.APIToken,
-		"APIAddr":                 cfg.APIAddr,
-		"NotifyInfoChannelID":     cfg.NotifyInfoChannelID,
-		"NotifyWarningChannelID":  cfg.NotifyWarningChannelID,
-		"NotifyCriticalChannelID": cfg.NotifyCriticalChannelID,
+
+	scalar := map[string]string{
+		"Token":    cfg.Token,
+		"GuildID":  cfg.GuildID,
+		"APIToken": cfg.APIToken,
+		"APIAddr":  cfg.APIAddr,
 	}
-	want := map[string]string{
-		"Token":                   "discord-tok",
-		"GuildID":                 "guild-1",
-		"APIToken":                "api-tok",
-		"APIAddr":                 ":7777",
-		"NotifyInfoChannelID":     "ch-info",
-		"NotifyWarningChannelID":  "ch-warn",
-		"NotifyCriticalChannelID": "ch-crit",
+	wantScalar := map[string]string{
+		"Token":    "discord-tok",
+		"GuildID":  "guild-1",
+		"APIToken": "api-tok",
+		"APIAddr":  ":7777",
 	}
-	for field, got := range checks {
-		if got != want[field] {
-			t.Errorf("%s: want %q, got %q", field, want[field], got)
+	for field, got := range scalar {
+		if got != wantScalar[field] {
+			t.Errorf("%s: want %q, got %q", field, wantScalar[field], got)
 		}
 	}
+
+	wantChannels := map[string]string{
+		"info":     "ch-info",
+		"warning":  "ch-warn",
+		"critical": "ch-crit",
+	}
+	for level, want := range wantChannels {
+		if got := cfg.NotifyChannels[level]; got != want {
+			t.Errorf("NotifyChannels[%q]: want %q, got %q", level, want, got)
+		}
+	}
+
 	if len(cfg.EnabledModules) != 2 {
 		t.Errorf("EnabledModules: want 2 entries, got %v", cfg.EnabledModules)
+	}
+}
+
+func TestLoad_NotifyChannels_DynamicLevel(t *testing.T) {
+	t.Setenv("DISCORD_TOKEN", "tok")
+	t.Setenv("NOTIFY_EMERGENCY_CHANNEL_ID", "ch-emergency")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.NotifyChannels["emergency"] != "ch-emergency" {
+		t.Errorf("NotifyChannels[emergency]: want ch-emergency, got %q", cfg.NotifyChannels["emergency"])
 	}
 }
