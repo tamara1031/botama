@@ -22,7 +22,9 @@
 | `MODULES_ENABLED` | — | 有効化するモジュール名（カンマ区切り）。未設定の場合は何も起動しない |
 | `GUILD_ID` | — | ギルドコマンドとして登録する場合のサーバー ID。未設定はグローバル（反映まで最大1時間） |
 | `API_TOKEN` | notify | notify モジュールの Bearer 認証トークン（`openssl rand -hex 32` 推奨） |
-| `NOTIFICATION_CHANNEL_ID` | — | `POST /notify`（チャンネル ID なし）のデフォルト送信先。省略時は当該エンドポイントが 404 を返す |
+| `NOTIFY_INFO_CHANNEL_ID` | — | `POST /notify/info` の送信先チャンネル ID。省略時は 404 |
+| `NOTIFY_WARNING_CHANNEL_ID` | — | `POST /notify/warning` の送信先チャンネル ID。省略時は 404 |
+| `NOTIFY_CRITICAL_CHANNEL_ID` | — | `POST /notify/critical` の送信先チャンネル ID。省略時は 404 |
 | `API_ADDR` | — | notify モジュールの HTTP リッスンアドレス（デフォルト `:8080`） |
 
 ## ローカル実行
@@ -47,31 +49,37 @@ make down      # 停止
 ### notify モジュールのテスト
 
 ```bash
-# チャンネル ID をパスで指定 → 204 No Content
-curl -i -X POST http://localhost:8080/notify/509717668790534146 \
+# info レベルで送信 → 204 No Content
+curl -i -X POST http://localhost:8080/notify/info \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"content": "テスト通知"}'
+  -d '{"content": "デプロイ完了"}'
 
-# デフォルトチャンネル（NOTIFICATION_CHANNEL_ID が必要）→ 204 No Content
-curl -i -X POST http://localhost:8080/notify \
+# warning レベルで送信 → 204 No Content
+curl -i -X POST http://localhost:8080/notify/warning \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"content": "テスト通知"}'
+  -d '{"content": "CPU 使用率が高い"}'
 
-# 存在しないチャンネル ID → 404 channel not found
-curl -i -X POST http://localhost:8080/notify/000000000000000000 \
+# critical レベルで送信 → 204 No Content
+curl -i -X POST http://localhost:8080/notify/critical \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "サービスダウン"}'
+
+# チャンネル未設定（対応する NOTIFY_*_CHANNEL_ID が空）→ 404
+curl -i -X POST http://localhost:8080/notify/info \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"content": "テスト"}'
 
 # 認証なし → 401
-curl -i -X POST http://localhost:8080/notify/509717668790534146 \
+curl -i -X POST http://localhost:8080/notify/info \
   -H "Content-Type: application/json" \
   -d '{"content": "テスト"}'
 
 # content 欠落 → 422
-curl -i -X POST http://localhost:8080/notify/509717668790534146 \
+curl -i -X POST http://localhost:8080/notify/info \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{}'
@@ -155,7 +163,7 @@ spec:
 クラスタ内の他 Pod からの呼び出し例:
 
 ```bash
-curl -X POST http://botama.default.svc.cluster.local:8080/notify/509717668790534146 \
+curl -X POST http://botama.default.svc.cluster.local:8080/notify/info \
   -H "Authorization: Bearer $API_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"content": "デプロイ完了"}'
@@ -173,13 +181,14 @@ curl -X POST http://botama.default.svc.cluster.local:8080/notify/509717668790534
 
 `MODULES_ENABLED` に `notify` を追加すると有効になる。`API_TOKEN` が必須。
 
-| エンドポイント | 説明 |
+| エンドポイント | 送信先 |
 |---|---|
-| `POST /notify/{channelID}` | パスで指定した Discord チャンネル ID に送信 |
-| `POST /notify` | `NOTIFICATION_CHANNEL_ID` のデフォルトチャンネルに送信（後方互換） |
+| `POST /notify/info` | `NOTIFY_INFO_CHANNEL_ID` のチャンネル |
+| `POST /notify/warning` | `NOTIFY_WARNING_CHANNEL_ID` のチャンネル |
+| `POST /notify/critical` | `NOTIFY_CRITICAL_CHANNEL_ID` のチャンネル |
 
 ```
-POST /notify/{channelID}
+POST /notify/info
 Authorization: Bearer <API_TOKEN>
 Content-Type: application/json
 

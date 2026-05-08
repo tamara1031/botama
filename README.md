@@ -16,7 +16,7 @@ make run
 | 名前 | 種別 | 概要 |
 |---|---|---|
 | ping | スラッシュコマンド | `/ping` に `pong` で応答 |
-| notify | HTTP API | `POST /notify/{channelID}` または `POST /notify`（デフォルトch）でDiscordに通知を送信 |
+| notify | HTTP API | `POST /notify/info` / `POST /notify/warning` / `POST /notify/critical` でDiscordに通知を送信 |
 
 ## ドキュメント
 
