@@ -98,7 +98,7 @@ func TestRegistry_StopAll_OnlyStopsActive(t *testing.T) {
 	}
 }
 
-func TestRegistry_StopAll_ReturnsFirstError(t *testing.T) {
+func TestRegistry_StopAll_ReturnsError(t *testing.T) {
 	r := newRegistry()
 	m := &mockModule{name: "fail", unregErr: errors.New("unregister failed")}
 	r.add(m)
@@ -107,6 +107,26 @@ func TestRegistry_StopAll_ReturnsFirstError(t *testing.T) {
 	err := r.stopAll()
 	if err == nil {
 		t.Fatal("expected error from Unregister")
+	}
+}
+
+func TestRegistry_StopAll_ReturnsAllErrors(t *testing.T) {
+	r := newRegistry()
+	m1 := &mockModule{name: "fail1", unregErr: errors.New("err1")}
+	m2 := &mockModule{name: "fail2", unregErr: errors.New("err2")}
+	r.add(m1)
+	r.add(m2)
+	_ = r.startEnabled(nil, []string{"fail1", "fail2"})
+
+	err := r.stopAll()
+	if err == nil {
+		t.Fatal("expected errors from both modules")
+	}
+	if !errors.Is(err, m1.unregErr) {
+		t.Errorf("expected err1 in joined error, got: %v", err)
+	}
+	if !errors.Is(err, m2.unregErr) {
+		t.Errorf("expected err2 in joined error, got: %v", err)
 	}
 }
 
