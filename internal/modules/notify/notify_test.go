@@ -248,27 +248,27 @@ func TestBearerAuth(t *testing.T) {
 	})
 }
 
-// --- handleInfo ---
+// --- sendLevel ---
 
-func TestHandleInfo_NoChannel(t *testing.T) {
+func TestSendLevel_NoChannel(t *testing.T) {
 	n := newNotify("tok", Channels{}, nil)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/notify/info", nil)
 
-	n.handleInfo(w, r)
+	n.sendLevel(w, r, "info", "")
 
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("want 404, got %d", w.Code)
 	}
 }
 
-func TestHandleInfo_SendsToInfoChannel(t *testing.T) {
+func TestSendLevel_SendsToChannel(t *testing.T) {
 	mock := &mockSender{}
 	n := newNotify("tok", Channels{Info: "chan-info"}, mock)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/notify/info", bytes.NewBufferString(`{"content":"hello"}`))
 
-	n.handleInfo(w, r)
+	n.sendLevel(w, r, "info", "chan-info")
 
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("want 204, got %d: %s", w.Code, w.Body)
@@ -281,19 +281,83 @@ func TestHandleInfo_SendsToInfoChannel(t *testing.T) {
 	}
 }
 
-// --- handleWarning ---
+// --- New() route dispatch: data-driven integration tests ---
 
-func TestHandleWarning_SendsToWarningChannel(t *testing.T) {
-	mock := &mockSender{}
-	n := newNotify("tok", Channels{Warning: "chan-warn"}, mock)
+// newServer creates a full Notify server backed by a mock sender, using httptest.
+func newServer(t *testing.T, token string, channels Channels, sender Sender) *httptest.Server {
+	t.Helper()
+	n := New(token, channels, ":0")
+	n.sender = sender
+	return httptest.NewServer(n.server.Handler)
+}
 
-	mux := http.NewServeMux()
-	mux.Handle("POST /notify/warning", bearerAuth("tok")(http.HandlerFunc(n.handleWarning)))
-	srv := httptest.NewServer(mux)
+func TestNew_RoutesAllLevels(t *testing.T) {
+	cases := []struct {
+		level   string
+		path    string
+		channel string
+	}{
+		{"info", "/notify/info", "chan-info"},
+		{"warning", "/notify/warning", "chan-warn"},
+		{"critical", "/notify/critical", "chan-crit"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.level, func(t *testing.T) {
+			mock := &mockSender{}
+			srv := newServer(t, "tok", Channels{
+				Info:     "chan-info",
+				Warning:  "chan-warn",
+				Critical: "chan-crit",
+			}, mock)
+			defer srv.Close()
+
+			body := bytes.NewBufferString(`{"content":"alert"}`)
+			req, _ := http.NewRequest(http.MethodPost, srv.URL+tc.path, body)
+			req.Header.Set("Authorization", "Bearer tok")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusNoContent {
+				t.Fatalf("want 204, got %d", resp.StatusCode)
+			}
+			if mock.sentTo != tc.channel {
+				t.Fatalf("want sentTo=%q, got %q", tc.channel, mock.sentTo)
+			}
+			if mock.sentContent != "alert" {
+				t.Fatalf("want sentContent=alert, got %q", mock.sentContent)
+			}
+		})
+	}
+}
+
+func TestNew_UnauthorizedIsRejected(t *testing.T) {
+	srv := newServer(t, "secret", Channels{Info: "ch"}, &mockSender{})
 	defer srv.Close()
 
-	body := bytes.NewBufferString(`{"content":"high cpu"}`)
-	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/notify/warning", body)
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/notify/info",
+		bytes.NewBufferString(`{"content":"x"}`))
+	req.Header.Set("Authorization", "Bearer wrong")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", resp.StatusCode)
+	}
+}
+
+func TestNew_UnconfiguredChannelReturns404(t *testing.T) {
+	srv := newServer(t, "tok", Channels{}, &mockSender{})
+	defer srv.Close()
+
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/notify/warning",
+		bytes.NewBufferString(`{"content":"x"}`))
 	req.Header.Set("Authorization", "Bearer tok")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -301,29 +365,8 @@ func TestHandleWarning_SendsToWarningChannel(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusNoContent {
-		t.Fatalf("want 204, got %d", resp.StatusCode)
-	}
-	if mock.sentTo != "chan-warn" {
-		t.Fatalf("want sentTo=chan-warn, got %q", mock.sentTo)
-	}
-}
-
-// --- handleCritical ---
-
-func TestHandleCritical_SendsToCriticalChannel(t *testing.T) {
-	mock := &mockSender{}
-	n := newNotify("tok", Channels{Critical: "chan-crit"}, mock)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodPost, "/notify/critical", bytes.NewBufferString(`{"content":"down"}`))
-
-	n.handleCritical(w, r)
-
-	if w.Code != http.StatusNoContent {
-		t.Fatalf("want 204, got %d: %s", w.Code, w.Body)
-	}
-	if mock.sentTo != "chan-crit" {
-		t.Fatalf("want sentTo=chan-crit, got %q", mock.sentTo)
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", resp.StatusCode)
 	}
 }
 
