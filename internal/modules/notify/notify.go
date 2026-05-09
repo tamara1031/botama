@@ -28,11 +28,9 @@ type postBody struct {
 	Content string `json:"content"`
 }
 
-type Channels struct {
-	Info     string
-	Warning  string
-	Critical string
-}
+// Channels maps notification level names (e.g. "info", "warning") to Discord channel IDs.
+// Adding a new level requires no code change — only a new map entry.
+type Channels map[string]string
 
 // Config holds the runtime configuration for the notify module.
 type Config struct {
@@ -42,20 +40,39 @@ type Config struct {
 }
 
 // LoadConfig reads the notify module's configuration from environment variables.
+// Channels are discovered dynamically via NOTIFY_<LEVEL>_CHANNEL_ID env vars.
 func LoadConfig() Config {
 	addr := os.Getenv("API_ADDR")
 	if addr == "" {
 		addr = ":8080"
 	}
 	return Config{
-		Token: os.Getenv("API_TOKEN"),
-		Addr:  addr,
-		Channels: Channels{
-			Info:     os.Getenv("NOTIFY_INFO_CHANNEL_ID"),
-			Warning:  os.Getenv("NOTIFY_WARNING_CHANNEL_ID"),
-			Critical: os.Getenv("NOTIFY_CRITICAL_CHANNEL_ID"),
-		},
+		Token:    os.Getenv("API_TOKEN"),
+		Addr:     addr,
+		Channels: loadNotifyChannels(),
 	}
+}
+
+const (
+	notifyEnvPrefix = "NOTIFY_"
+	notifyEnvSuffix = "_CHANNEL_ID"
+)
+
+func loadNotifyChannels() Channels {
+	channels := make(Channels)
+	for _, env := range os.Environ() {
+		name, val, hasVal := strings.Cut(env, "=")
+		if !hasVal || val == "" {
+			continue
+		}
+		if strings.HasPrefix(name, notifyEnvPrefix) && strings.HasSuffix(name, notifyEnvSuffix) {
+			level := strings.ToLower(name[len(notifyEnvPrefix) : len(name)-len(notifyEnvSuffix)])
+			if level != "" {
+				channels[level] = val
+			}
+		}
+	}
+	return channels
 }
 
 type Notify struct {
@@ -63,23 +80,6 @@ type Notify struct {
 	channels Channels
 	server   *http.Server
 	sender   Sender
-}
-
-// levelEntry maps a notification level to its URL path and Discord channel ID.
-type levelEntry struct {
-	name      string
-	path      string
-	channelID string
-}
-
-// levels returns the ordered list of notification levels derived from the configured channels.
-// Adding a new level requires only a single entry here.
-func (n *Notify) levels() []levelEntry {
-	return []levelEntry{
-		{"info", "POST /notify/info", n.channels.Info},
-		{"warning", "POST /notify/warning", n.channels.Warning},
-		{"critical", "POST /notify/critical", n.channels.Critical},
-	}
 }
 
 func New(cfg Config) *Notify {
@@ -90,11 +90,8 @@ func New(cfg Config) *Notify {
 	mux := http.NewServeMux()
 	auth := bearerAuth(cfg.Token)
 	observe := func(h http.Handler) http.Handler { return requestID(requestLogger(h)) }
-	for _, l := range n.levels() {
-		l := l
-		mux.Handle(l.path, observe(auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			n.sendLevel(w, r, l.name, l.channelID)
-		}))))
+	for level, channelID := range cfg.Channels {
+		mux.Handle("POST /notify/"+level, observe(auth(n.levelHandler(level, channelID))))
 	}
 	mux.Handle("GET /healthz", observe(http.HandlerFunc(n.healthz)))
 	n.server = &http.Server{
@@ -104,6 +101,13 @@ func New(cfg Config) *Notify {
 		WriteTimeout:      10 * time.Second,
 	}
 	return n
+}
+
+// levelHandler returns an http.HandlerFunc bound to a specific level and channel.
+func (n *Notify) levelHandler(level, channelID string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		n.sendLevel(w, r, level, channelID)
+	}
 }
 
 // bearerAuth returns middleware that enforces Bearer token authentication.
@@ -122,7 +126,7 @@ func bearerAuth(token string) func(http.Handler) http.Handler {
 }
 
 func channelsConfigured(c Channels) bool {
-	return c.Info != "" || c.Warning != "" || c.Critical != ""
+	return len(c) > 0
 }
 
 func (n *Notify) Name() string { return "notify" }

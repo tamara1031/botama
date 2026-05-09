@@ -69,7 +69,7 @@ func TestRequestLogger_PassesThrough(t *testing.T) {
 }
 
 func TestNew_ResponseHasRequestID(t *testing.T) {
-	srv := newServer(t, "tok", Channels{Info: "ch"}, &mockSender{})
+	srv := newServer(t, "tok", Channels{"info": "ch"}, &mockSender{})
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/healthz", nil)

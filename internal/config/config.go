@@ -12,8 +12,8 @@ type DiscordConfig struct {
 }
 
 type NotifyConfig struct {
-	APIToken        string
-	APIAddr         string
+	APIToken string
+	APIAddr  string
 	InfoChannel     string
 	WarningChannel  string
 	CriticalChannel string

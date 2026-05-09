@@ -44,48 +44,6 @@ func newNotify(token string, channels Channels, sender Sender) *Notify {
 	}
 }
 
-// --- requestLogger ---
-
-func TestRequestLogger_PassesStatusThrough(t *testing.T) {
-	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusAccepted)
-	})
-	handler := requestLogger(inner)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	handler.ServeHTTP(w, r)
-	if w.Code != http.StatusAccepted {
-		t.Fatalf("want 202, got %d", w.Code)
-	}
-}
-
-func TestRequestLogger_DefaultStatusOK(t *testing.T) {
-	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("ok"))
-	})
-	handler := requestLogger(inner)
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	handler.ServeHTTP(w, r)
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", w.Code)
-	}
-}
-
-// --- newRequestID ---
-
-func TestNewRequestID_IsHex16Chars(t *testing.T) {
-	id := newRequestID()
-	if len(id) != 16 {
-		t.Fatalf("want 16 hex chars, got %q (len=%d)", id, len(id))
-	}
-	for _, c := range id {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
-			t.Fatalf("non hex char %q in %q", c, id)
-		}
-	}
-}
-
 // --- channelsConfigured ---
 
 func TestChannelsConfigured(t *testing.T) {
@@ -95,10 +53,10 @@ func TestChannelsConfigured(t *testing.T) {
 		want bool
 	}{
 		{"all empty", Channels{}, false},
-		{"only info", Channels{Info: "ch"}, true},
-		{"only warning", Channels{Warning: "ch"}, true},
-		{"only critical", Channels{Critical: "ch"}, true},
-		{"all set", Channels{Info: "a", Warning: "b", Critical: "c"}, true},
+		{"only info", Channels{"info": "ch"}, true},
+		{"only warning", Channels{"warning": "ch"}, true},
+		{"only critical", Channels{"critical": "ch"}, true},
+		{"all set", Channels{"info": "a", "warning": "b", "critical": "c"}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -188,7 +146,7 @@ func TestSendLevel_NoChannel(t *testing.T) {
 
 func TestSendLevel_SendsToChannel(t *testing.T) {
 	mock := &mockSender{}
-	n := newNotify("tok", Channels{Info: "chan-info"}, mock)
+	n := newNotify("tok", Channels{"info": "chan-info"}, mock)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/notify/info", bytes.NewBufferString(`{"content":"hello"}`))
 
@@ -230,9 +188,9 @@ func TestNew_RoutesAllLevels(t *testing.T) {
 		t.Run(tc.level, func(t *testing.T) {
 			mock := &mockSender{}
 			srv := newServer(t, "tok", Channels{
-				Info:     "chan-info",
-				Warning:  "chan-warn",
-				Critical: "chan-crit",
+				"info":     "chan-info",
+				"warning":  "chan-warn",
+				"critical": "chan-crit",
 			}, mock)
 			defer srv.Close()
 
@@ -259,7 +217,7 @@ func TestNew_RoutesAllLevels(t *testing.T) {
 }
 
 func TestNew_UnauthorizedIsRejected(t *testing.T) {
-	srv := newServer(t, "secret", Channels{Info: "ch"}, &mockSender{})
+	srv := newServer(t, "secret", Channels{"info": "ch"}, &mockSender{})
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/notify/info",
@@ -393,8 +351,8 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.Token != "" {
 		t.Errorf("Token: want empty, got %q", cfg.Token)
 	}
-	if cfg.Channels != (Channels{}) {
-		t.Errorf("Channels: want zero value, got %+v", cfg.Channels)
+	if len(cfg.Channels) != 0 {
+		t.Errorf("Channels: want empty, got %+v", cfg.Channels)
 	}
 }
 
@@ -413,13 +371,23 @@ func TestLoadConfig_AllFields(t *testing.T) {
 	if cfg.Addr != ":9090" {
 		t.Errorf("Addr: want :9090, got %q", cfg.Addr)
 	}
-	if cfg.Channels.Info != "ch-info" {
-		t.Errorf("Channels.Info: want ch-info, got %q", cfg.Channels.Info)
+	if cfg.Channels["info"] != "ch-info" {
+		t.Errorf("Channels[info]: want ch-info, got %q", cfg.Channels["info"])
 	}
-	if cfg.Channels.Warning != "ch-warn" {
-		t.Errorf("Channels.Warning: want ch-warn, got %q", cfg.Channels.Warning)
+	if cfg.Channels["warning"] != "ch-warn" {
+		t.Errorf("Channels[warning]: want ch-warn, got %q", cfg.Channels["warning"])
 	}
-	if cfg.Channels.Critical != "ch-crit" {
-		t.Errorf("Channels.Critical: want ch-crit, got %q", cfg.Channels.Critical)
+	if cfg.Channels["critical"] != "ch-crit" {
+		t.Errorf("Channels[critical]: want ch-crit, got %q", cfg.Channels["critical"])
+	}
+}
+
+func TestLoadConfig_DynamicLevel(t *testing.T) {
+	t.Setenv("NOTIFY_EMERGENCY_CHANNEL_ID", "ch-emergency")
+
+	cfg := LoadConfig()
+
+	if cfg.Channels["emergency"] != "ch-emergency" {
+		t.Errorf("Channels[emergency]: want ch-emergency, got %q", cfg.Channels["emergency"])
 	}
 }

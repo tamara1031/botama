@@ -133,6 +133,7 @@ func TestLoad_AllFields(t *testing.T) {
 	if cfg.Notify.CriticalChannel != "ch-crit" {
 		t.Errorf("Notify.CriticalChannel: want ch-crit, got %q", cfg.Notify.CriticalChannel)
 	}
+
 	if len(cfg.EnabledModules) != 2 {
 		t.Errorf("EnabledModules: want 2 entries, got %v", cfg.EnabledModules)
 	}
