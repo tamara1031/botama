@@ -53,11 +53,7 @@ func main() {
 	}
 
 	b.RegisterModule(ping.New(cfg.Discord.GuildID))
-	b.RegisterModule(notify.New(cfg.Notify.APIToken, notify.Channels{
-		Info:     cfg.Notify.InfoChannel,
-		Warning:  cfg.Notify.WarningChannel,
-		Critical: cfg.Notify.CriticalChannel,
-	}, cfg.Notify.APIAddr))
+	b.RegisterModule(notify.New(notify.LoadConfig()))
 
 	if err := b.Start(); err != nil {
 		slog.Error("start", "error", err)

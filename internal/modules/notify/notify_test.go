@@ -44,27 +44,6 @@ func newNotify(token string, channels Channels, sender Sender) *Notify {
 	}
 }
 
-// --- statusResponseWriter ---
-
-func TestStatusResponseWriter_DefaultOK(t *testing.T) {
-	sw := &statusResponseWriter{ResponseWriter: httptest.NewRecorder()}
-	if sw.written() != http.StatusOK {
-		t.Fatalf("want 200 by default, got %d", sw.written())
-	}
-}
-
-func TestStatusResponseWriter_CapturesWrittenCode(t *testing.T) {
-	w := httptest.NewRecorder()
-	sw := &statusResponseWriter{ResponseWriter: w}
-	sw.WriteHeader(http.StatusCreated)
-	if sw.written() != http.StatusCreated {
-		t.Fatalf("want 201, got %d", sw.written())
-	}
-	if w.Code != http.StatusCreated {
-		t.Fatalf("underlying recorder want 201, got %d", w.Code)
-	}
-}
-
 // --- requestLogger ---
 
 func TestRequestLogger_PassesStatusThrough(t *testing.T) {
@@ -104,61 +83,6 @@ func TestNewRequestID_IsHex16Chars(t *testing.T) {
 		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
 			t.Fatalf("non hex char %q in %q", c, id)
 		}
-	}
-}
-
-func TestNewRequestID_Unique(t *testing.T) {
-	if a, b := newRequestID(), newRequestID(); a == b {
-		t.Fatalf("two consecutive IDs are equal: %q", a)
-	}
-}
-
-// --- requestIDMiddleware ---
-
-func TestRequestIDMiddleware_GeneratesIDWhenAbsent(t *testing.T) {
-	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	requestIDMiddleware(inner).ServeHTTP(w, r)
-	if w.Header().Get("X-Request-ID") == "" {
-		t.Fatal("want X-Request-ID response header, got empty")
-	}
-}
-
-func TestRequestIDMiddleware_PropagatesClientID(t *testing.T) {
-	var gotCtxID string
-	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotCtxID, _ = r.Context().Value(requestIDKey).(string)
-		w.WriteHeader(http.StatusOK)
-	})
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/", nil)
-	r.Header.Set("X-Request-ID", "client-abc123")
-	requestIDMiddleware(inner).ServeHTTP(w, r)
-	if got := w.Header().Get("X-Request-ID"); got != "client-abc123" {
-		t.Fatalf("response X-Request-ID: want client-abc123, got %q", got)
-	}
-	if gotCtxID != "client-abc123" {
-		t.Fatalf("context request_id: want client-abc123, got %q", gotCtxID)
-	}
-}
-
-// --- requestLogger reads request_id from context ---
-
-func TestRequestLogger_ReadsRequestIDFromContext(t *testing.T) {
-	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	// Chain: requestIDMiddleware injects ID into context; requestLogger reads it.
-	handler := requestIDMiddleware(requestLogger(inner))
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	r.Header.Set("X-Request-ID", "trace-xyz")
-	handler.ServeHTTP(w, r)
-	if got := w.Header().Get("X-Request-ID"); got != "trace-xyz" {
-		t.Fatalf("want X-Request-ID=trace-xyz, got %q", got)
 	}
 }
 
@@ -286,7 +210,7 @@ func TestSendLevel_SendsToChannel(t *testing.T) {
 // newServer creates a full Notify server backed by a mock sender, using httptest.
 func newServer(t *testing.T, token string, channels Channels, sender Sender) *httptest.Server {
 	t.Helper()
-	n := New(token, channels, ":0")
+	n := New(Config{Token: token, Addr: ":0", Channels: channels})
 	n.sender = sender
 	return httptest.NewServer(n.server.Handler)
 }
@@ -449,5 +373,53 @@ func TestSend_Success(t *testing.T) {
 	}
 	if mock.sentContent != "works!" {
 		t.Fatalf("want sentContent=works!, got %q", mock.sentContent)
+	}
+}
+
+// --- LoadConfig ---
+
+func TestLoadConfig_Defaults(t *testing.T) {
+	t.Setenv("API_TOKEN", "")
+	t.Setenv("API_ADDR", "")
+	t.Setenv("NOTIFY_INFO_CHANNEL_ID", "")
+	t.Setenv("NOTIFY_WARNING_CHANNEL_ID", "")
+	t.Setenv("NOTIFY_CRITICAL_CHANNEL_ID", "")
+
+	cfg := LoadConfig()
+
+	if cfg.Addr != ":8080" {
+		t.Errorf("Addr: want :8080, got %q", cfg.Addr)
+	}
+	if cfg.Token != "" {
+		t.Errorf("Token: want empty, got %q", cfg.Token)
+	}
+	if cfg.Channels != (Channels{}) {
+		t.Errorf("Channels: want zero value, got %+v", cfg.Channels)
+	}
+}
+
+func TestLoadConfig_AllFields(t *testing.T) {
+	t.Setenv("API_TOKEN", "tok")
+	t.Setenv("API_ADDR", ":9090")
+	t.Setenv("NOTIFY_INFO_CHANNEL_ID", "ch-info")
+	t.Setenv("NOTIFY_WARNING_CHANNEL_ID", "ch-warn")
+	t.Setenv("NOTIFY_CRITICAL_CHANNEL_ID", "ch-crit")
+
+	cfg := LoadConfig()
+
+	if cfg.Token != "tok" {
+		t.Errorf("Token: want tok, got %q", cfg.Token)
+	}
+	if cfg.Addr != ":9090" {
+		t.Errorf("Addr: want :9090, got %q", cfg.Addr)
+	}
+	if cfg.Channels.Info != "ch-info" {
+		t.Errorf("Channels.Info: want ch-info, got %q", cfg.Channels.Info)
+	}
+	if cfg.Channels.Warning != "ch-warn" {
+		t.Errorf("Channels.Warning: want ch-warn, got %q", cfg.Channels.Warning)
+	}
+	if cfg.Channels.Critical != "ch-crit" {
+		t.Errorf("Channels.Critical: want ch-crit, got %q", cfg.Channels.Critical)
 	}
 }

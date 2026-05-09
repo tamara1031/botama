@@ -2,83 +2,19 @@ package notify
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/subtle"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 )
-
-type contextKey string
-
-const requestIDKey contextKey = "request_id"
-
-// newRequestID generates a cryptographically random 16-char hex request ID.
-func newRequestID() string {
-	b := make([]byte, 8)
-	_, _ = io.ReadFull(rand.Reader, b)
-	return hex.EncodeToString(b)
-}
-
-// requestIDMiddleware reads X-Request-ID from the incoming request or generates
-// a new one, stores it in the request context, and echoes it on the response.
-func requestIDMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id := r.Header.Get("X-Request-ID")
-		if id == "" {
-			id = newRequestID()
-		}
-		w.Header().Set("X-Request-ID", id)
-		ctx := context.WithValue(r.Context(), requestIDKey, id)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-// statusResponseWriter wraps http.ResponseWriter to capture the written status code.
-type statusResponseWriter struct {
-	http.ResponseWriter
-	status int
-}
-
-func (w *statusResponseWriter) WriteHeader(code int) {
-	w.status = code
-	w.ResponseWriter.WriteHeader(code)
-}
-
-func (w *statusResponseWriter) written() int {
-	if w.status == 0 {
-		return http.StatusOK
-	}
-	return w.status
-}
-
-// requestLogger logs method, path, status, duration, and request_id for each request.
-// It reads request_id from the context set by requestIDMiddleware.
-func requestLogger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		sw := &statusResponseWriter{ResponseWriter: w}
-		next.ServeHTTP(sw, r)
-		id, _ := r.Context().Value(requestIDKey).(string)
-		slog.Info("notify: request",
-			"request_id", id,
-			"method", r.Method,
-			"path", r.URL.Path,
-			"status", sw.written(),
-			"duration_ms", time.Since(start).Milliseconds(),
-			"remote", r.RemoteAddr,
-		)
-	})
-}
 
 const maxBodyBytes = 4 * 1024
 
@@ -96,6 +32,30 @@ type Channels struct {
 	Info     string
 	Warning  string
 	Critical string
+}
+
+// Config holds the runtime configuration for the notify module.
+type Config struct {
+	Token    string
+	Addr     string
+	Channels Channels
+}
+
+// LoadConfig reads the notify module's configuration from environment variables.
+func LoadConfig() Config {
+	addr := os.Getenv("API_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	return Config{
+		Token: os.Getenv("API_TOKEN"),
+		Addr:  addr,
+		Channels: Channels{
+			Info:     os.Getenv("NOTIFY_INFO_CHANNEL_ID"),
+			Warning:  os.Getenv("NOTIFY_WARNING_CHANNEL_ID"),
+			Critical: os.Getenv("NOTIFY_CRITICAL_CHANNEL_ID"),
+		},
+	}
 }
 
 type Notify struct {
@@ -122,13 +82,13 @@ func (n *Notify) levels() []levelEntry {
 	}
 }
 
-func New(token string, channels Channels, addr string) *Notify {
+func New(cfg Config) *Notify {
 	n := &Notify{
-		token:    token,
-		channels: channels,
+		token:    cfg.Token,
+		channels: cfg.Channels,
 	}
 	mux := http.NewServeMux()
-	auth := bearerAuth(token)
+	auth := bearerAuth(cfg.Token)
 	observe := func(h http.Handler) http.Handler { return requestID(requestLogger(h)) }
 	for _, l := range n.levels() {
 		l := l
@@ -138,8 +98,8 @@ func New(token string, channels Channels, addr string) *Notify {
 	}
 	mux.Handle("GET /healthz", observe(http.HandlerFunc(n.healthz)))
 	n.server = &http.Server{
-		Addr:              addr,
-		Handler:           requestIDMiddleware(requestLogger(mux)),
+		Addr:              cfg.Addr,
+		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		WriteTimeout:      10 * time.Second,
 	}
