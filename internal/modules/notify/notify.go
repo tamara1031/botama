@@ -40,6 +40,23 @@ type Notify struct {
 	sender   Sender
 }
 
+// levelEntry maps a notification level to its URL path and Discord channel ID.
+type levelEntry struct {
+	name      string
+	path      string
+	channelID string
+}
+
+// levels returns the ordered list of notification levels derived from the configured channels.
+// Adding a new level requires only a single entry here.
+func (n *Notify) levels() []levelEntry {
+	return []levelEntry{
+		{"info", "POST /notify/info", n.channels.Info},
+		{"warning", "POST /notify/warning", n.channels.Warning},
+		{"critical", "POST /notify/critical", n.channels.Critical},
+	}
+}
+
 func New(token string, channels Channels, addr string) *Notify {
 	n := &Notify{
 		token:    token,
@@ -47,9 +64,12 @@ func New(token string, channels Channels, addr string) *Notify {
 	}
 	mux := http.NewServeMux()
 	auth := bearerAuth(token)
-	mux.Handle("POST /notify/info", auth(http.HandlerFunc(n.handleInfo)))
-	mux.Handle("POST /notify/warning", auth(http.HandlerFunc(n.handleWarning)))
-	mux.Handle("POST /notify/critical", auth(http.HandlerFunc(n.handleCritical)))
+	for _, l := range n.levels() {
+		l := l
+		mux.Handle(l.path, auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			n.sendLevel(w, r, l.name, l.channelID)
+		})))
+	}
 	mux.HandleFunc("GET /healthz", n.healthz)
 	n.server = &http.Server{
 		Addr:              addr,
@@ -116,18 +136,6 @@ func (n *Notify) healthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte(`{"status":"ok"}`))
-}
-
-func (n *Notify) handleInfo(w http.ResponseWriter, r *http.Request) {
-	n.sendLevel(w, r, "info", n.channels.Info)
-}
-
-func (n *Notify) handleWarning(w http.ResponseWriter, r *http.Request) {
-	n.sendLevel(w, r, "warning", n.channels.Warning)
-}
-
-func (n *Notify) handleCritical(w http.ResponseWriter, r *http.Request) {
-	n.sendLevel(w, r, "critical", n.channels.Critical)
 }
 
 func (n *Notify) sendLevel(w http.ResponseWriter, r *http.Request, level, channelID string) {
