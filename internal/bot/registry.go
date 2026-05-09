@@ -1,6 +1,8 @@
 package bot
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	"github.com/bwmarrin/discordgo"
@@ -9,6 +11,7 @@ import (
 type registry struct {
 	modules map[string]Module
 	active  map[string]bool
+	order   []string // registration order; stopAll iterates in reverse (LIFO)
 }
 
 func newRegistry() *registry {
@@ -19,7 +22,11 @@ func newRegistry() *registry {
 }
 
 func (r *registry) add(m Module) {
-	r.modules[m.Name()] = m
+	name := m.Name()
+	if _, exists := r.modules[name]; !exists {
+		r.order = append(r.order, name)
+	}
+	r.modules[name] = m
 }
 
 func (r *registry) startEnabled(s *discordgo.Session, names []string) error {
@@ -27,6 +34,9 @@ func (r *registry) startEnabled(s *discordgo.Session, names []string) error {
 		m, ok := r.modules[name]
 		if !ok {
 			return fmt.Errorf("module %q is not registered", name)
+		}
+		if r.active[name] {
+			return fmt.Errorf("module %q is already running", name)
 		}
 		if err := m.Register(s); err != nil {
 			return fmt.Errorf("module %q: %w", name, err)
@@ -36,16 +46,17 @@ func (r *registry) startEnabled(s *discordgo.Session, names []string) error {
 	return nil
 }
 
-func (r *registry) stopAll() error {
-	var firstErr error
-	for name, m := range r.modules {
+func (r *registry) stopAll(ctx context.Context) error {
+	var errs []error
+	for i := len(r.order) - 1; i >= 0; i-- {
+		name := r.order[i]
 		if !r.active[name] {
 			continue
 		}
-		if err := m.Unregister(); err != nil && firstErr == nil {
-			firstErr = fmt.Errorf("module %q unregister: %w", name, err)
+		if err := r.modules[name].Shutdown(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("module %q shutdown: %w", name, err))
 		}
 		r.active[name] = false
 	}
-	return firstErr
+	return errors.Join(errs...)
 }

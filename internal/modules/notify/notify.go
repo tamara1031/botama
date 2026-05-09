@@ -65,15 +65,38 @@ type Notify struct {
 	sender   Sender
 }
 
+// levelEntry maps a notification level to its URL path and Discord channel ID.
+type levelEntry struct {
+	name      string
+	path      string
+	channelID string
+}
+
+// levels returns the ordered list of notification levels derived from the configured channels.
+// Adding a new level requires only a single entry here.
+func (n *Notify) levels() []levelEntry {
+	return []levelEntry{
+		{"info", "POST /notify/info", n.channels.Info},
+		{"warning", "POST /notify/warning", n.channels.Warning},
+		{"critical", "POST /notify/critical", n.channels.Critical},
+	}
+}
+
 func New(cfg Config) *Notify {
 	n := &Notify{
 		token:    cfg.Token,
 		channels: cfg.Channels,
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /notify/info", n.handleInfo)
-	mux.HandleFunc("POST /notify/warning", n.handleWarning)
-	mux.HandleFunc("POST /notify/critical", n.handleCritical)
+	auth := bearerAuth(cfg.Token)
+	observe := func(h http.Handler) http.Handler { return requestID(requestLogger(h)) }
+	for _, l := range n.levels() {
+		l := l
+		mux.Handle(l.path, observe(auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			n.sendLevel(w, r, l.name, l.channelID)
+		}))))
+	}
+	mux.Handle("GET /healthz", observe(http.HandlerFunc(n.healthz)))
 	n.server = &http.Server{
 		Addr:              cfg.Addr,
 		Handler:           mux,
@@ -83,11 +106,34 @@ func New(cfg Config) *Notify {
 	return n
 }
 
+// bearerAuth returns middleware that enforces Bearer token authentication.
+func bearerAuth(token string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if subtle.ConstantTimeCompare([]byte(t), []byte(token)) != 1 {
+				slog.Warn("notify: unauthorized", "remote", r.RemoteAddr)
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func channelsConfigured(c Channels) bool {
+	return c.Info != "" || c.Warning != "" || c.Critical != ""
+}
+
 func (n *Notify) Name() string { return "notify" }
 
 func (n *Notify) Register(s *discordgo.Session) error {
 	if n.token == "" {
 		return fmt.Errorf("notify: API_TOKEN is required")
+	}
+
+	if !channelsConfigured(n.channels) {
+		slog.Warn("notify: no notification channels configured; all /notify/* requests will return 404")
 	}
 
 	n.sender = s
@@ -105,25 +151,17 @@ func (n *Notify) Register(s *discordgo.Session) error {
 	return nil
 }
 
-func (n *Notify) Unregister() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+func (n *Notify) Shutdown(ctx context.Context) error {
 	if err := n.server.Shutdown(ctx); err != nil {
 		return fmt.Errorf("notify: shutdown: %w", err)
 	}
 	return nil
 }
 
-func (n *Notify) handleInfo(w http.ResponseWriter, r *http.Request) {
-	n.sendLevel(w, r, "info", n.channels.Info)
-}
-
-func (n *Notify) handleWarning(w http.ResponseWriter, r *http.Request) {
-	n.sendLevel(w, r, "warning", n.channels.Warning)
-}
-
-func (n *Notify) handleCritical(w http.ResponseWriter, r *http.Request) {
-	n.sendLevel(w, r, "critical", n.channels.Critical)
+func (n *Notify) healthz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
 func (n *Notify) sendLevel(w http.ResponseWriter, r *http.Request, level, channelID string) {
@@ -135,12 +173,6 @@ func (n *Notify) sendLevel(w http.ResponseWriter, r *http.Request, level, channe
 }
 
 func (n *Notify) send(w http.ResponseWriter, r *http.Request, level, channelID string) {
-	if !n.authorized(r) {
-		slog.Warn("notify: unauthorized", "remote", r.RemoteAddr)
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
 	var body postBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -166,9 +198,4 @@ func (n *Notify) send(w http.ResponseWriter, r *http.Request, level, channelID s
 
 	slog.Info("notify: sent", "level", level, "channel", channelID, "remote", r.RemoteAddr)
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (n *Notify) authorized(r *http.Request) bool {
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	return subtle.ConstantTimeCompare([]byte(token), []byte(n.token)) == 1
 }
