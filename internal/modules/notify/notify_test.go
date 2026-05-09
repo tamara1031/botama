@@ -44,6 +44,124 @@ func newNotify(token string, channels Channels, sender Sender) *Notify {
 	}
 }
 
+// --- statusResponseWriter ---
+
+func TestStatusResponseWriter_DefaultOK(t *testing.T) {
+	sw := &statusResponseWriter{ResponseWriter: httptest.NewRecorder()}
+	if sw.written() != http.StatusOK {
+		t.Fatalf("want 200 by default, got %d", sw.written())
+	}
+}
+
+func TestStatusResponseWriter_CapturesWrittenCode(t *testing.T) {
+	w := httptest.NewRecorder()
+	sw := &statusResponseWriter{ResponseWriter: w}
+	sw.WriteHeader(http.StatusCreated)
+	if sw.written() != http.StatusCreated {
+		t.Fatalf("want 201, got %d", sw.written())
+	}
+	if w.Code != http.StatusCreated {
+		t.Fatalf("underlying recorder want 201, got %d", w.Code)
+	}
+}
+
+// --- requestLogger ---
+
+func TestRequestLogger_PassesStatusThrough(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+	})
+	handler := requestLogger(inner)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	handler.ServeHTTP(w, r)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("want 202, got %d", w.Code)
+	}
+}
+
+func TestRequestLogger_DefaultStatusOK(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	})
+	handler := requestLogger(inner)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	handler.ServeHTTP(w, r)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+}
+
+// --- newRequestID ---
+
+func TestNewRequestID_IsHex16Chars(t *testing.T) {
+	id := newRequestID()
+	if len(id) != 16 {
+		t.Fatalf("want 16 hex chars, got %q (len=%d)", id, len(id))
+	}
+	for _, c := range id {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			t.Fatalf("non hex char %q in %q", c, id)
+		}
+	}
+}
+
+func TestNewRequestID_Unique(t *testing.T) {
+	if a, b := newRequestID(), newRequestID(); a == b {
+		t.Fatalf("two consecutive IDs are equal: %q", a)
+	}
+}
+
+// --- requestIDMiddleware ---
+
+func TestRequestIDMiddleware_GeneratesIDWhenAbsent(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	requestIDMiddleware(inner).ServeHTTP(w, r)
+	if w.Header().Get("X-Request-ID") == "" {
+		t.Fatal("want X-Request-ID response header, got empty")
+	}
+}
+
+func TestRequestIDMiddleware_PropagatesClientID(t *testing.T) {
+	var gotCtxID string
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCtxID, _ = r.Context().Value(requestIDKey).(string)
+		w.WriteHeader(http.StatusOK)
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("X-Request-ID", "client-abc123")
+	requestIDMiddleware(inner).ServeHTTP(w, r)
+	if got := w.Header().Get("X-Request-ID"); got != "client-abc123" {
+		t.Fatalf("response X-Request-ID: want client-abc123, got %q", got)
+	}
+	if gotCtxID != "client-abc123" {
+		t.Fatalf("context request_id: want client-abc123, got %q", gotCtxID)
+	}
+}
+
+// --- requestLogger reads request_id from context ---
+
+func TestRequestLogger_ReadsRequestIDFromContext(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	// Chain: requestIDMiddleware injects ID into context; requestLogger reads it.
+	handler := requestIDMiddleware(requestLogger(inner))
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	r.Header.Set("X-Request-ID", "trace-xyz")
+	handler.ServeHTTP(w, r)
+	if got := w.Header().Get("X-Request-ID"); got != "trace-xyz" {
+		t.Fatalf("want X-Request-ID=trace-xyz, got %q", got)
+	}
+}
+
 // --- channelsConfigured ---
 
 func TestChannelsConfigured(t *testing.T) {
