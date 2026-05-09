@@ -1,16 +1,41 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/tamara1031/botama/internal/bot"
 	"github.com/tamara1031/botama/internal/config"
 	"github.com/tamara1031/botama/internal/modules/notify"
 	"github.com/tamara1031/botama/internal/modules/ping"
 )
+
+func initLogger(level, format string) {
+	var lvl slog.Level
+	switch strings.ToLower(level) {
+	case "debug":
+		lvl = slog.LevelDebug
+	case "warn", "warning":
+		lvl = slog.LevelWarn
+	case "error":
+		lvl = slog.LevelError
+	default:
+		lvl = slog.LevelInfo
+	}
+	opts := &slog.HandlerOptions{Level: lvl}
+	var h slog.Handler
+	if strings.ToLower(format) == "text" {
+		h = slog.NewTextHandler(os.Stderr, opts)
+	} else {
+		h = slog.NewJSONHandler(os.Stderr, opts)
+	}
+	slog.SetDefault(slog.New(h))
+}
 
 func main() {
 	cfg, err := config.Load()
@@ -19,14 +44,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	initLogger(cfg.LogLevel, cfg.LogFormat)
+
 	b, err := bot.New(cfg)
 	if err != nil {
 		slog.Error("init", "error", err)
 		os.Exit(1)
 	}
 
-	b.RegisterModule(ping.New(cfg.GuildID))
-	b.RegisterModule(notify.New(cfg.APIToken, notify.Channels(cfg.NotifyChannels), cfg.APIAddr))
+	b.RegisterModule(ping.New(cfg.Discord.GuildID))
+	b.RegisterModule(notify.New(notify.LoadConfig()))
 
 	if err := b.Start(); err != nil {
 		slog.Error("start", "error", err)
@@ -40,7 +67,9 @@ func main() {
 	<-stop
 
 	slog.Info("shutting down")
-	if err := b.Stop(); err != nil {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := b.Stop(shutdownCtx); err != nil {
 		slog.Error("shutdown", "error", err)
 		os.Exit(1)
 	}

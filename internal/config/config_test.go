@@ -21,34 +21,59 @@ func TestLoad_Defaults(t *testing.T) {
 	t.Setenv("NOTIFY_INFO_CHANNEL_ID", "")
 	t.Setenv("NOTIFY_WARNING_CHANNEL_ID", "")
 	t.Setenv("NOTIFY_CRITICAL_CHANNEL_ID", "")
+	t.Setenv("LOG_LEVEL", "")
+	t.Setenv("LOG_FORMAT", "")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Token != "tok" {
-		t.Errorf("Token: want tok, got %q", cfg.Token)
+	if cfg.Discord.Token != "tok" {
+		t.Errorf("Discord.Token: want tok, got %q", cfg.Discord.Token)
 	}
-	if cfg.APIAddr != ":8080" {
-		t.Errorf("APIAddr: want :8080, got %q", cfg.APIAddr)
+	if cfg.Notify.APIAddr != ":8080" {
+		t.Errorf("Notify.APIAddr: want :8080, got %q", cfg.Notify.APIAddr)
 	}
 	if len(cfg.EnabledModules) != 0 {
 		t.Errorf("EnabledModules: want empty, got %v", cfg.EnabledModules)
 	}
-	if len(cfg.NotifyChannels) != 0 {
-		t.Errorf("NotifyChannels: want empty, got %v", cfg.NotifyChannels)
+	if cfg.LogLevel != "info" {
+		t.Errorf("LogLevel: want info, got %q", cfg.LogLevel)
+	}
+	if cfg.LogFormat != "json" {
+		t.Errorf("LogFormat: want json, got %q", cfg.LogFormat)
+	}
+}
+
+func TestLoad_LogLevelAndFormat(t *testing.T) {
+	t.Setenv("DISCORD_TOKEN", "tok")
+	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("LOG_FORMAT", "text")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.LogLevel != "debug" {
+		t.Errorf("LogLevel: want debug, got %q", cfg.LogLevel)
+	}
+	if cfg.LogFormat != "text" {
+		t.Errorf("LogFormat: want text, got %q", cfg.LogFormat)
 	}
 }
 
 func TestLoad_ModulesParsed(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "tok")
 	t.Setenv("MODULES_ENABLED", "ping, notify , ping")
+	// notify module requires API_TOKEN
+	t.Setenv("API_TOKEN", "required-for-notify")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := []string{"ping", "notify", "ping"}
+	// duplicate "ping" must be removed; order of first occurrence is preserved
+	want := []string{"ping", "notify"}
 	if len(cfg.EnabledModules) != len(want) {
 		t.Fatalf("EnabledModules: want %v, got %v", want, cfg.EnabledModules)
 	}
@@ -67,8 +92,8 @@ func TestLoad_CustomAPIAddr(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.APIAddr != ":9090" {
-		t.Errorf("APIAddr: want :9090, got %q", cfg.APIAddr)
+	if cfg.Notify.APIAddr != ":9090" {
+		t.Errorf("Notify.APIAddr: want :9090, got %q", cfg.Notify.APIAddr)
 	}
 }
 
@@ -87,33 +112,26 @@ func TestLoad_AllFields(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	scalar := map[string]string{
-		"Token":    cfg.Token,
-		"GuildID":  cfg.GuildID,
-		"APIToken": cfg.APIToken,
-		"APIAddr":  cfg.APIAddr,
+	if cfg.Discord.Token != "discord-tok" {
+		t.Errorf("Discord.Token: want discord-tok, got %q", cfg.Discord.Token)
 	}
-	wantScalar := map[string]string{
-		"Token":    "discord-tok",
-		"GuildID":  "guild-1",
-		"APIToken": "api-tok",
-		"APIAddr":  ":7777",
+	if cfg.Discord.GuildID != "guild-1" {
+		t.Errorf("Discord.GuildID: want guild-1, got %q", cfg.Discord.GuildID)
 	}
-	for field, got := range scalar {
-		if got != wantScalar[field] {
-			t.Errorf("%s: want %q, got %q", field, wantScalar[field], got)
-		}
+	if cfg.Notify.APIToken != "api-tok" {
+		t.Errorf("Notify.APIToken: want api-tok, got %q", cfg.Notify.APIToken)
 	}
-
-	wantChannels := map[string]string{
-		"info":     "ch-info",
-		"warning":  "ch-warn",
-		"critical": "ch-crit",
+	if cfg.Notify.APIAddr != ":7777" {
+		t.Errorf("Notify.APIAddr: want :7777, got %q", cfg.Notify.APIAddr)
 	}
-	for level, want := range wantChannels {
-		if got := cfg.NotifyChannels[level]; got != want {
-			t.Errorf("NotifyChannels[%q]: want %q, got %q", level, want, got)
-		}
+	if cfg.Notify.InfoChannel != "ch-info" {
+		t.Errorf("Notify.InfoChannel: want ch-info, got %q", cfg.Notify.InfoChannel)
+	}
+	if cfg.Notify.WarningChannel != "ch-warn" {
+		t.Errorf("Notify.WarningChannel: want ch-warn, got %q", cfg.Notify.WarningChannel)
+	}
+	if cfg.Notify.CriticalChannel != "ch-crit" {
+		t.Errorf("Notify.CriticalChannel: want ch-crit, got %q", cfg.Notify.CriticalChannel)
 	}
 
 	if len(cfg.EnabledModules) != 2 {
@@ -121,15 +139,40 @@ func TestLoad_AllFields(t *testing.T) {
 	}
 }
 
-func TestLoad_NotifyChannels_DynamicLevel(t *testing.T) {
+// --- validate ---
+
+func TestLoad_NotifyModuleRequiresAPIToken(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "tok")
-	t.Setenv("NOTIFY_EMERGENCY_CHANNEL_ID", "ch-emergency")
+	t.Setenv("MODULES_ENABLED", "notify")
+	t.Setenv("API_TOKEN", "")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected error when notify is enabled without API_TOKEN")
+	}
+}
+
+func TestLoad_NotifyModuleWithAPIToken(t *testing.T) {
+	t.Setenv("DISCORD_TOKEN", "tok")
+	t.Setenv("MODULES_ENABLED", "notify")
+	t.Setenv("API_TOKEN", "secret")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.NotifyChannels["emergency"] != "ch-emergency" {
-		t.Errorf("NotifyChannels[emergency]: want ch-emergency, got %q", cfg.NotifyChannels["emergency"])
+	if cfg.Notify.APIToken != "secret" {
+		t.Errorf("Notify.APIToken: want secret, got %q", cfg.Notify.APIToken)
+	}
+}
+
+func TestLoad_PingModuleNoExtraReqs(t *testing.T) {
+	t.Setenv("DISCORD_TOKEN", "tok")
+	t.Setenv("MODULES_ENABLED", "ping")
+	t.Setenv("API_TOKEN", "")
+
+	_, err := Load()
+	if err != nil {
+		t.Fatalf("ping module should not require API_TOKEN, got: %v", err)
 	}
 }
