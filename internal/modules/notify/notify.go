@@ -64,13 +64,14 @@ func New(token string, channels Channels, addr string) *Notify {
 	}
 	mux := http.NewServeMux()
 	auth := bearerAuth(token)
+	observe := func(h http.Handler) http.Handler { return requestID(requestLogger(h)) }
 	for _, l := range n.levels() {
 		l := l
-		mux.Handle(l.path, auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mux.Handle(l.path, observe(auth(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			n.sendLevel(w, r, l.name, l.channelID)
-		})))
+		}))))
 	}
-	mux.HandleFunc("GET /healthz", n.healthz)
+	mux.Handle("GET /healthz", observe(http.HandlerFunc(n.healthz)))
 	n.server = &http.Server{
 		Addr:              addr,
 		Handler:           mux,
