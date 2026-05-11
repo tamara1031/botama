@@ -53,7 +53,11 @@ func main() {
 	}
 
 	b.RegisterModule(ping.New(cfg.Discord.GuildID))
-	b.RegisterModule(notify.New(notify.LoadConfig()))
+	b.RegisterModule(notify.New(notify.Config{
+		Token:    cfg.Notify.Token,
+		Addr:     cfg.Notify.Addr,
+		Channels: notify.Channels(cfg.Notify.Channels),
+	}))
 
 	if err := b.Start(); err != nil {
 		slog.Error("start", "error", err)
