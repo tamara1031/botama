@@ -12,11 +12,9 @@ type DiscordConfig struct {
 }
 
 type NotifyConfig struct {
-	APIToken string
-	APIAddr  string
-	InfoChannel     string
-	WarningChannel  string
-	CriticalChannel string
+	Token    string
+	Addr     string
+	Channels map[string]string
 }
 
 type Config struct {
@@ -64,11 +62,9 @@ func Load() (*Config, error) {
 			GuildID: os.Getenv("GUILD_ID"),
 		},
 		Notify: NotifyConfig{
-			APIToken:        os.Getenv("API_TOKEN"),
-			APIAddr:         apiAddr,
-			InfoChannel:     os.Getenv("NOTIFY_INFO_CHANNEL_ID"),
-			WarningChannel:  os.Getenv("NOTIFY_WARNING_CHANNEL_ID"),
-			CriticalChannel: os.Getenv("NOTIFY_CRITICAL_CHANNEL_ID"),
+			Token:    os.Getenv("API_TOKEN"),
+			Addr:     apiAddr,
+			Channels: loadNotifyChannels(),
 		},
 		EnabledModules: modules,
 		LogLevel:       logLevel,
@@ -87,10 +83,35 @@ func (c *Config) validate() error {
 	for _, name := range c.EnabledModules {
 		switch name {
 		case "notify":
-			if c.Notify.APIToken == "" {
+			if c.Notify.Token == "" {
 				return fmt.Errorf("module %q requires API_TOKEN", name)
 			}
 		}
 	}
 	return nil
+}
+
+const (
+	notifyEnvPrefix = "NOTIFY_"
+	notifyEnvSuffix = "_CHANNEL_ID"
+)
+
+// loadNotifyChannels discovers NOTIFY_<LEVEL>_CHANNEL_ID environment variables
+// and returns a map from level name to Discord channel ID.
+// Adding a new level requires no code change — only a new env var.
+func loadNotifyChannels() map[string]string {
+	channels := make(map[string]string)
+	for _, env := range os.Environ() {
+		name, val, hasVal := strings.Cut(env, "=")
+		if !hasVal || val == "" {
+			continue
+		}
+		if strings.HasPrefix(name, notifyEnvPrefix) && strings.HasSuffix(name, notifyEnvSuffix) {
+			level := strings.ToLower(name[len(notifyEnvPrefix) : len(name)-len(notifyEnvSuffix)])
+			if level != "" {
+				channels[level] = val
+			}
+		}
+	}
+	return channels
 }
