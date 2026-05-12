@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -28,56 +27,17 @@ type postBody struct {
 	Content string `json:"content"`
 }
 
-// Channels maps notification level names (e.g. "info", "warning") to Discord channel IDs.
-// Adding a new level requires no code change — only a new map entry.
-type Channels map[string]string
-
 // Config holds the runtime configuration for the notify module.
+// Build it from config.NotifyConfig in main; do not read env vars here.
 type Config struct {
 	Token    string
 	Addr     string
-	Channels Channels
-}
-
-// LoadConfig reads the notify module's configuration from environment variables.
-// Channels are discovered dynamically via NOTIFY_<LEVEL>_CHANNEL_ID env vars.
-func LoadConfig() Config {
-	addr := os.Getenv("API_ADDR")
-	if addr == "" {
-		addr = ":8080"
-	}
-	return Config{
-		Token:    os.Getenv("API_TOKEN"),
-		Addr:     addr,
-		Channels: loadNotifyChannels(),
-	}
-}
-
-const (
-	notifyEnvPrefix = "NOTIFY_"
-	notifyEnvSuffix = "_CHANNEL_ID"
-)
-
-func loadNotifyChannels() Channels {
-	channels := make(Channels)
-	for _, env := range os.Environ() {
-		name, val, hasVal := strings.Cut(env, "=")
-		if !hasVal || val == "" {
-			continue
-		}
-		if strings.HasPrefix(name, notifyEnvPrefix) && strings.HasSuffix(name, notifyEnvSuffix) {
-			level := strings.ToLower(name[len(notifyEnvPrefix) : len(name)-len(notifyEnvSuffix)])
-			if level != "" {
-				channels[level] = val
-			}
-		}
-	}
-	return channels
+	Channels map[string]string
 }
 
 type Notify struct {
 	token    string
-	channels Channels
+	channels map[string]string
 	server   *http.Server
 	sender   Sender
 }
@@ -125,7 +85,7 @@ func bearerAuth(token string) func(http.Handler) http.Handler {
 	}
 }
 
-func channelsConfigured(c Channels) bool {
+func channelsConfigured(c map[string]string) bool {
 	return len(c) > 0
 }
 
