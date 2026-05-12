@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -39,41 +38,6 @@ type Config struct {
 	Channels Channels
 }
 
-// LoadConfig reads the notify module's configuration from environment variables.
-// Channels are discovered dynamically via NOTIFY_<LEVEL>_CHANNEL_ID env vars.
-func LoadConfig() Config {
-	addr := os.Getenv("API_ADDR")
-	if addr == "" {
-		addr = ":8080"
-	}
-	return Config{
-		Token:    os.Getenv("API_TOKEN"),
-		Addr:     addr,
-		Channels: loadNotifyChannels(),
-	}
-}
-
-const (
-	notifyEnvPrefix = "NOTIFY_"
-	notifyEnvSuffix = "_CHANNEL_ID"
-)
-
-func loadNotifyChannels() Channels {
-	channels := make(Channels)
-	for _, env := range os.Environ() {
-		name, val, hasVal := strings.Cut(env, "=")
-		if !hasVal || val == "" {
-			continue
-		}
-		if strings.HasPrefix(name, notifyEnvPrefix) && strings.HasSuffix(name, notifyEnvSuffix) {
-			level := strings.ToLower(name[len(notifyEnvPrefix) : len(name)-len(notifyEnvSuffix)])
-			if level != "" {
-				channels[level] = val
-			}
-		}
-	}
-	return channels
-}
 
 type Notify struct {
 	token    string
