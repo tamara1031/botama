@@ -124,14 +124,14 @@ func TestLoad_AllFields(t *testing.T) {
 	if cfg.Notify.APIAddr != ":7777" {
 		t.Errorf("Notify.APIAddr: want :7777, got %q", cfg.Notify.APIAddr)
 	}
-	if cfg.Notify.InfoChannel != "ch-info" {
-		t.Errorf("Notify.InfoChannel: want ch-info, got %q", cfg.Notify.InfoChannel)
+	if cfg.Notify.Channels["info"] != "ch-info" {
+		t.Errorf("Notify.Channels[info]: want ch-info, got %q", cfg.Notify.Channels["info"])
 	}
-	if cfg.Notify.WarningChannel != "ch-warn" {
-		t.Errorf("Notify.WarningChannel: want ch-warn, got %q", cfg.Notify.WarningChannel)
+	if cfg.Notify.Channels["warning"] != "ch-warn" {
+		t.Errorf("Notify.Channels[warning]: want ch-warn, got %q", cfg.Notify.Channels["warning"])
 	}
-	if cfg.Notify.CriticalChannel != "ch-crit" {
-		t.Errorf("Notify.CriticalChannel: want ch-crit, got %q", cfg.Notify.CriticalChannel)
+	if cfg.Notify.Channels["critical"] != "ch-crit" {
+		t.Errorf("Notify.Channels[critical]: want ch-crit, got %q", cfg.Notify.Channels["critical"])
 	}
 
 	if len(cfg.EnabledModules) != 2 {
@@ -174,5 +174,33 @@ func TestLoad_PingModuleNoExtraReqs(t *testing.T) {
 	_, err := Load()
 	if err != nil {
 		t.Fatalf("ping module should not require API_TOKEN, got: %v", err)
+	}
+}
+
+func TestLoad_NotifyChannelsDynamic(t *testing.T) {
+	t.Setenv("DISCORD_TOKEN", "tok")
+	t.Setenv("NOTIFY_EMERGENCY_CHANNEL_ID", "ch-emergency")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Notify.Channels["emergency"] != "ch-emergency" {
+		t.Errorf("Notify.Channels[emergency]: want ch-emergency, got %q", cfg.Notify.Channels["emergency"])
+	}
+}
+
+func TestLoad_NotifyChannelsEmpty(t *testing.T) {
+	t.Setenv("DISCORD_TOKEN", "tok")
+	t.Setenv("NOTIFY_INFO_CHANNEL_ID", "")
+	t.Setenv("NOTIFY_WARNING_CHANNEL_ID", "")
+	t.Setenv("NOTIFY_CRITICAL_CHANNEL_ID", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.Notify.Channels) != 0 {
+		t.Errorf("Notify.Channels: want empty map, got %+v", cfg.Notify.Channels)
 	}
 }
