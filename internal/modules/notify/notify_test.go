@@ -18,6 +18,9 @@ type mockSender struct {
 	err         error
 }
 
+// channels is a convenience alias used in tests to keep declarations concise.
+type channels = map[string]string
+
 func (m *mockSender) ChannelMessageSend(channelID, content string, _ ...discordgo.RequestOption) (*discordgo.Message, error) {
 	m.sentTo = channelID
 	m.sentContent = content
@@ -36,7 +39,7 @@ func restError(status int) *discordgo.RESTError {
 }
 
 // newNotify constructs a Notify with a fake sender, skipping the TCP listener.
-func newNotify(token string, channels Channels, sender Sender) *Notify {
+func newNotify(token string, channels channels, sender Sender) *Notify {
 	return &Notify{
 		token:    token,
 		channels: channels,
@@ -49,14 +52,14 @@ func newNotify(token string, channels Channels, sender Sender) *Notify {
 func TestChannelsConfigured(t *testing.T) {
 	cases := []struct {
 		name string
-		ch   Channels
+		ch   channels
 		want bool
 	}{
-		{"all empty", Channels{}, false},
-		{"only info", Channels{"info": "ch"}, true},
-		{"only warning", Channels{"warning": "ch"}, true},
-		{"only critical", Channels{"critical": "ch"}, true},
-		{"all set", Channels{"info": "a", "warning": "b", "critical": "c"}, true},
+		{"all empty", channels{}, false},
+		{"only info", channels{"info": "ch"}, true},
+		{"only warning", channels{"warning": "ch"}, true},
+		{"only critical", channels{"critical": "ch"}, true},
+		{"all set", channels{"info": "a", "warning": "b", "critical": "c"}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -133,7 +136,7 @@ func TestBearerAuth(t *testing.T) {
 // --- sendLevel ---
 
 func TestSendLevel_NoChannel(t *testing.T) {
-	n := newNotify("tok", Channels{}, nil)
+	n := newNotify("tok", channels{}, nil)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/notify/info", nil)
 
@@ -146,7 +149,7 @@ func TestSendLevel_NoChannel(t *testing.T) {
 
 func TestSendLevel_SendsToChannel(t *testing.T) {
 	mock := &mockSender{}
-	n := newNotify("tok", Channels{"info": "chan-info"}, mock)
+	n := newNotify("tok", channels{"info": "chan-info"}, mock)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/notify/info", bytes.NewBufferString(`{"content":"hello"}`))
 
@@ -166,7 +169,7 @@ func TestSendLevel_SendsToChannel(t *testing.T) {
 // --- New() route dispatch: data-driven integration tests ---
 
 // newServer creates a full Notify server backed by a mock sender, using httptest.
-func newServer(t *testing.T, token string, channels Channels, sender Sender) *httptest.Server {
+func newServer(t *testing.T, token string, channels channels, sender Sender) *httptest.Server {
 	t.Helper()
 	n := New(Config{Token: token, Addr: ":0", Channels: channels})
 	n.sender = sender
@@ -187,7 +190,7 @@ func TestNew_RoutesAllLevels(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.level, func(t *testing.T) {
 			mock := &mockSender{}
-			srv := newServer(t, "tok", Channels{
+			srv := newServer(t, "tok", channels{
 				"info":     "chan-info",
 				"warning":  "chan-warn",
 				"critical": "chan-crit",
@@ -217,7 +220,7 @@ func TestNew_RoutesAllLevels(t *testing.T) {
 }
 
 func TestNew_UnauthorizedIsRejected(t *testing.T) {
-	srv := newServer(t, "secret", Channels{"info": "ch"}, &mockSender{})
+	srv := newServer(t, "secret", channels{"info": "ch"}, &mockSender{})
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/notify/info",
@@ -235,7 +238,7 @@ func TestNew_UnauthorizedIsRejected(t *testing.T) {
 }
 
 func TestNew_UnconfiguredChannelReturns404(t *testing.T) {
-	srv := newServer(t, "tok", Channels{}, &mockSender{})
+	srv := newServer(t, "tok", channels{}, &mockSender{})
 	defer srv.Close()
 
 	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/notify/warning",
@@ -255,7 +258,7 @@ func TestNew_UnconfiguredChannelReturns404(t *testing.T) {
 // --- send: body validation ---
 
 func TestSend_BadJSON(t *testing.T) {
-	n := newNotify("tok", Channels{}, &mockSender{})
+	n := newNotify("tok", channels{}, &mockSender{})
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader("not-json"))
 
@@ -267,7 +270,7 @@ func TestSend_BadJSON(t *testing.T) {
 }
 
 func TestSend_EmptyContent(t *testing.T) {
-	n := newNotify("tok", Channels{}, &mockSender{})
+	n := newNotify("tok", channels{}, &mockSender{})
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":""}`))
 
@@ -279,7 +282,7 @@ func TestSend_EmptyContent(t *testing.T) {
 }
 
 func TestSend_MissingContentField(t *testing.T) {
-	n := newNotify("tok", Channels{}, &mockSender{})
+	n := newNotify("tok", channels{}, &mockSender{})
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{}`))
 
@@ -294,7 +297,7 @@ func TestSend_MissingContentField(t *testing.T) {
 
 func TestSend_ChannelNotFound(t *testing.T) {
 	mock := &mockSender{err: restError(http.StatusNotFound)}
-	n := newNotify("tok", Channels{}, mock)
+	n := newNotify("tok", channels{}, mock)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":"hi"}`))
 
@@ -307,7 +310,7 @@ func TestSend_ChannelNotFound(t *testing.T) {
 
 func TestSend_DiscordInternalError(t *testing.T) {
 	mock := &mockSender{err: fmt.Errorf("discord exploded")}
-	n := newNotify("tok", Channels{}, mock)
+	n := newNotify("tok", channels{}, mock)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":"hi"}`))
 
@@ -320,7 +323,7 @@ func TestSend_DiscordInternalError(t *testing.T) {
 
 func TestSend_Success(t *testing.T) {
 	mock := &mockSender{}
-	n := newNotify("tok", Channels{}, mock)
+	n := newNotify("tok", channels{}, mock)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(`{"content":"works!"}`))
 
@@ -334,60 +337,3 @@ func TestSend_Success(t *testing.T) {
 	}
 }
 
-// --- LoadConfig ---
-
-func TestLoadConfig_Defaults(t *testing.T) {
-	t.Setenv("API_TOKEN", "")
-	t.Setenv("API_ADDR", "")
-	t.Setenv("NOTIFY_INFO_CHANNEL_ID", "")
-	t.Setenv("NOTIFY_WARNING_CHANNEL_ID", "")
-	t.Setenv("NOTIFY_CRITICAL_CHANNEL_ID", "")
-
-	cfg := LoadConfig()
-
-	if cfg.Addr != ":8080" {
-		t.Errorf("Addr: want :8080, got %q", cfg.Addr)
-	}
-	if cfg.Token != "" {
-		t.Errorf("Token: want empty, got %q", cfg.Token)
-	}
-	if len(cfg.Channels) != 0 {
-		t.Errorf("Channels: want empty, got %+v", cfg.Channels)
-	}
-}
-
-func TestLoadConfig_AllFields(t *testing.T) {
-	t.Setenv("API_TOKEN", "tok")
-	t.Setenv("API_ADDR", ":9090")
-	t.Setenv("NOTIFY_INFO_CHANNEL_ID", "ch-info")
-	t.Setenv("NOTIFY_WARNING_CHANNEL_ID", "ch-warn")
-	t.Setenv("NOTIFY_CRITICAL_CHANNEL_ID", "ch-crit")
-
-	cfg := LoadConfig()
-
-	if cfg.Token != "tok" {
-		t.Errorf("Token: want tok, got %q", cfg.Token)
-	}
-	if cfg.Addr != ":9090" {
-		t.Errorf("Addr: want :9090, got %q", cfg.Addr)
-	}
-	if cfg.Channels["info"] != "ch-info" {
-		t.Errorf("Channels[info]: want ch-info, got %q", cfg.Channels["info"])
-	}
-	if cfg.Channels["warning"] != "ch-warn" {
-		t.Errorf("Channels[warning]: want ch-warn, got %q", cfg.Channels["warning"])
-	}
-	if cfg.Channels["critical"] != "ch-crit" {
-		t.Errorf("Channels[critical]: want ch-crit, got %q", cfg.Channels["critical"])
-	}
-}
-
-func TestLoadConfig_DynamicLevel(t *testing.T) {
-	t.Setenv("NOTIFY_EMERGENCY_CHANNEL_ID", "ch-emergency")
-
-	cfg := LoadConfig()
-
-	if cfg.Channels["emergency"] != "ch-emergency" {
-		t.Errorf("Channels[emergency]: want ch-emergency, got %q", cfg.Channels["emergency"])
-	}
-}
