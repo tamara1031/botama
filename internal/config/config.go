@@ -103,11 +103,8 @@ func Load() (*Config, error) {
 // at startup before the Discord session is opened.
 func (c *Config) validate() error {
 	for _, name := range c.EnabledModules {
-		switch name {
-		case "notify":
-			if c.Notify.APIToken == "" {
-				return fmt.Errorf("module %q requires API_TOKEN", name)
-			}
+		if name == "notify" && c.Notify.APIToken == "" {
+			return fmt.Errorf("module %q requires API_TOKEN", name)
 		}
 	}
 	return nil
