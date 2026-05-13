@@ -11,12 +11,14 @@ type DiscordConfig struct {
 	GuildID string
 }
 
+// NotifyConfig holds all runtime settings for the notify module.
+// Channels maps level names (e.g. "info", "warning") to Discord channel IDs and
+// is populated dynamically from NOTIFY_<LEVEL>_CHANNEL_ID environment variables,
+// so new levels require no code change — only a new env var.
 type NotifyConfig struct {
 	APIToken string
 	APIAddr  string
-	InfoChannel     string
-	WarningChannel  string
-	CriticalChannel string
+	Channels map[string]string
 }
 
 type Config struct {
@@ -25,6 +27,30 @@ type Config struct {
 	EnabledModules []string
 	LogLevel       string
 	LogFormat      string
+}
+
+const (
+	notifyEnvPrefix = "NOTIFY_"
+	notifyEnvSuffix = "_CHANNEL_ID"
+)
+
+// loadNotifyChannels discovers NOTIFY_<LEVEL>_CHANNEL_ID env vars at startup,
+// returning a map of level name → channel ID.
+func loadNotifyChannels() map[string]string {
+	channels := make(map[string]string)
+	for _, env := range os.Environ() {
+		name, val, hasVal := strings.Cut(env, "=")
+		if !hasVal || val == "" {
+			continue
+		}
+		if strings.HasPrefix(name, notifyEnvPrefix) && strings.HasSuffix(name, notifyEnvSuffix) {
+			level := strings.ToLower(name[len(notifyEnvPrefix) : len(name)-len(notifyEnvSuffix)])
+			if level != "" {
+				channels[level] = val
+			}
+		}
+	}
+	return channels
 }
 
 func Load() (*Config, error) {
@@ -64,11 +90,9 @@ func Load() (*Config, error) {
 			GuildID: os.Getenv("GUILD_ID"),
 		},
 		Notify: NotifyConfig{
-			APIToken:        os.Getenv("API_TOKEN"),
-			APIAddr:         apiAddr,
-			InfoChannel:     os.Getenv("NOTIFY_INFO_CHANNEL_ID"),
-			WarningChannel:  os.Getenv("NOTIFY_WARNING_CHANNEL_ID"),
-			CriticalChannel: os.Getenv("NOTIFY_CRITICAL_CHANNEL_ID"),
+			APIToken: os.Getenv("API_TOKEN"),
+			APIAddr:  apiAddr,
+			Channels: loadNotifyChannels(),
 		},
 		EnabledModules: modules,
 		LogLevel:       logLevel,
