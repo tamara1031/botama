@@ -75,22 +75,5 @@ func Load() (*Config, error) {
 		LogFormat:      logFormat,
 	}
 
-	if err := cfg.validate(); err != nil {
-		return nil, err
-	}
 	return cfg, nil
-}
-
-// validate checks module-specific requirements so misconfiguration is caught
-// at startup before the Discord session is opened.
-func (c *Config) validate() error {
-	for _, name := range c.EnabledModules {
-		switch name {
-		case "notify":
-			if c.Notify.APIToken == "" {
-				return fmt.Errorf("module %q requires API_TOKEN", name)
-			}
-		}
-	}
-	return nil
 }
