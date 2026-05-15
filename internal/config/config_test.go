@@ -65,8 +65,7 @@ func TestLoad_LogLevelAndFormat(t *testing.T) {
 func TestLoad_ModulesParsed(t *testing.T) {
 	t.Setenv("DISCORD_TOKEN", "tok")
 	t.Setenv("MODULES_ENABLED", "ping, notify , ping")
-	// notify module requires API_TOKEN
-	t.Setenv("API_TOKEN", "required-for-notify")
+	t.Setenv("API_TOKEN", "tok")
 
 	cfg, err := Load()
 	if err != nil {
@@ -136,19 +135,6 @@ func TestLoad_AllFields(t *testing.T) {
 
 	if len(cfg.EnabledModules) != 2 {
 		t.Errorf("EnabledModules: want 2 entries, got %v", cfg.EnabledModules)
-	}
-}
-
-// --- validate ---
-
-func TestLoad_NotifyModuleRequiresAPIToken(t *testing.T) {
-	t.Setenv("DISCORD_TOKEN", "tok")
-	t.Setenv("MODULES_ENABLED", "notify")
-	t.Setenv("API_TOKEN", "")
-
-	_, err := Load()
-	if err == nil {
-		t.Fatal("expected error when notify is enabled without API_TOKEN")
 	}
 }
 

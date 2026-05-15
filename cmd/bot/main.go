@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -14,6 +15,42 @@ import (
 	"github.com/tamara1031/botama/internal/modules/notify"
 	"github.com/tamara1031/botama/internal/modules/ping"
 )
+
+// moduleFactory creates a bot.Module from the global config.
+// The factory is responsible for validating its own config prerequisites
+// and returning a descriptive error if they are not met.
+type moduleFactory func(cfg *config.Config) (bot.Module, error)
+
+// factories maps each known module name to its factory function.
+// To add a new module: add one entry here. No other file needs to change.
+var factories = map[string]moduleFactory{
+	"ping": func(cfg *config.Config) (bot.Module, error) {
+		return ping.New(cfg.Discord.GuildID), nil
+	},
+	"notify": func(cfg *config.Config) (bot.Module, error) {
+		if cfg.Notify.APIToken == "" {
+			return nil, fmt.Errorf("module %q requires API_TOKEN", "notify")
+		}
+		return notify.New(notify.LoadConfig()), nil
+	},
+}
+
+// registerModules instantiates and registers each enabled module using the
+// factory registry. Unknown module names are caught here before Start().
+func registerModules(b *bot.Bot, cfg *config.Config) error {
+	for _, name := range cfg.EnabledModules {
+		factory, ok := factories[name]
+		if !ok {
+			return fmt.Errorf("unknown module %q", name)
+		}
+		m, err := factory(cfg)
+		if err != nil {
+			return err
+		}
+		b.RegisterModule(m)
+	}
+	return nil
+}
 
 func initLogger(level, format string) {
 	var lvl slog.Level
@@ -52,8 +89,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	b.RegisterModule(ping.New(cfg.Discord.GuildID))
-	b.RegisterModule(notify.New(notify.LoadConfig()))
+	if err := registerModules(b, cfg); err != nil {
+		slog.Error("module setup", "error", err)
+		os.Exit(1)
+	}
 
 	if err := b.Start(); err != nil {
 		slog.Error("start", "error", err)
