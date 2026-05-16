@@ -14,9 +14,9 @@ type DiscordConfig struct {
 type NotifyConfig struct {
 	APIToken string
 	APIAddr  string
-	InfoChannel     string
-	WarningChannel  string
-	CriticalChannel string
+	// Channels maps notification level names to Discord channel IDs.
+	// Populated dynamically from NOTIFY_<LEVEL>_CHANNEL_ID env vars.
+	Channels map[string]string
 }
 
 type Config struct {
@@ -64,11 +64,9 @@ func Load() (*Config, error) {
 			GuildID: os.Getenv("GUILD_ID"),
 		},
 		Notify: NotifyConfig{
-			APIToken:        os.Getenv("API_TOKEN"),
-			APIAddr:         apiAddr,
-			InfoChannel:     os.Getenv("NOTIFY_INFO_CHANNEL_ID"),
-			WarningChannel:  os.Getenv("NOTIFY_WARNING_CHANNEL_ID"),
-			CriticalChannel: os.Getenv("NOTIFY_CRITICAL_CHANNEL_ID"),
+			APIToken: os.Getenv("API_TOKEN"),
+			APIAddr:  apiAddr,
+			Channels: loadNotifyChannels(),
 		},
 		EnabledModules: modules,
 		LogLevel:       logLevel,
@@ -79,6 +77,30 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+const (
+	notifyEnvPrefix = "NOTIFY_"
+	notifyEnvSuffix = "_CHANNEL_ID"
+)
+
+// loadNotifyChannels discovers notification channels from env vars matching
+// the pattern NOTIFY_<LEVEL>_CHANNEL_ID and returns a level→channelID map.
+func loadNotifyChannels() map[string]string {
+	channels := make(map[string]string)
+	for _, env := range os.Environ() {
+		name, val, hasVal := strings.Cut(env, "=")
+		if !hasVal || val == "" {
+			continue
+		}
+		if strings.HasPrefix(name, notifyEnvPrefix) && strings.HasSuffix(name, notifyEnvSuffix) {
+			level := strings.ToLower(name[len(notifyEnvPrefix) : len(name)-len(notifyEnvSuffix)])
+			if level != "" {
+				channels[level] = val
+			}
+		}
+	}
+	return channels
 }
 
 // validate checks module-specific requirements so misconfiguration is caught
