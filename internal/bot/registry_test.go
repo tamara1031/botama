@@ -10,17 +10,19 @@ import (
 
 // mockModule is a Module that records calls and returns configurable errors.
 type mockModule struct {
-	name         string
-	registered   bool
-	unregistered bool
-	registerErr  error
-	unregErr     error
+	name          string
+	registered    bool
+	unregistered  bool
+	registerErr   error
+	unregErr      error
+	registerCalls int
 }
 
 func (m *mockModule) Name() string { return m.name }
 
 func (m *mockModule) Register(_ *discordgo.Session) error {
 	m.registered = true
+	m.registerCalls++
 	return m.registerErr
 }
 
